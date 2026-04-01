@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: snakecs2d-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+
+  - type: static
+    name: snakecs2d-frontend
+    buildCommand: ""
+    staticPublishPath: public
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

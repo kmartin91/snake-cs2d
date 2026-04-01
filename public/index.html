@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Snake CS2D</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel game-panel">
+        <header class="banner">
+          <h1>Snake CS2D</h1>
+          <p>Plant or Defuse in a Snake arena.</p>
+        </header>
+
+        <canvas id="game" width="1020" height="660"></canvas>
+
+        <div class="status">
+          <span id="phase">Waiting players...</span>
+          <span id="event">Connect to start</span>
+        </div>
+      </section>
+
+      <aside class="panel side-panel">
+        <div class="join-box" id="joinBox">
+          <label for="nameInput">Agent Name</label>
+          <input id="nameInput" maxlength="18" placeholder="Phoenix" />
+          <label for="serverInput">Server URL (optional)</label>
+          <input id="serverInput" placeholder="https://snakecs2d-backend.onrender.com" />
+          <button id="joinBtn">Join Match</button>
+        </div>
+
+        <div class="score-row">
+          <div class="team team-t">
+            <span class="label">Terrorists</span>
+            <span id="scoreT">0</span>
+          </div>
+          <div class="team team-ct">
+            <span class="label">Counter-Terrorists</span>
+            <span id="scoreCT">0</span>
+          </div>
+        </div>
+
+        <section>
+          <h2>Leaderboard</h2>
+          <ul id="leaderboard"></ul>
+        </section>
+
+        <section class="rules">
+          <h2>How It Mixes Snake + CS</h2>
+          <p>Collect ammo crates to grow your snake body.</p>
+          <p>T side: carry the bomb to site A (center), then hold E to plant.</p>
+          <p>CT side: reach planted bomb and hold E to defuse.</p>
+          <p>Colliding with any snake body or head duel kills both.</p>
+        </section>
+
+        <section>
+          <h2>Controls</h2>
+          <p>Arrow keys or WASD to move, hold E for plant/defuse.</p>
+        </section>
+      </aside>
+    </main>
+
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script src="/client.js"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "snakecs2d",
+  "version": "1.0.0",
+  "description": "Multiplayer Counter-Strike x Snake hybrid",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "snake",
+    "counter-strike",
+    "multiplayer",
+    "socket.io"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.8.1"
+  }
+}
