@@ -33,18 +33,6 @@ This project has 2 parts:
 
 For internet multiplayer, host the backend on a Node host (Render, Railway, Fly.io, etc.) and connect frontend to it.
 
-## Netlify
-
-Yes, you can upload this to Netlify for the frontend.
-
-- Netlify can host `public/` with `netlify.toml` already configured.
-- The multiplayer Socket.IO server **cannot** run on Netlify static hosting.
-- Use a separate Node host for `server.js`, then in the game enter your backend URL in **Server URL (optional)**.
-
-Example backend URL:
-
-`https://your-snakecs2d-backend.onrender.com`
-
 ## Suggested Deploy Setup
 
 1. Deploy backend (`server.js`) to Render/Railway/Fly.
