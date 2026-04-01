@@ -2,7 +2,6 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const joinBtn = document.getElementById('joinBtn');
 const nameInput = document.getElementById('nameInput');
-const serverInput = document.getElementById('serverInput');
 const joinBox = document.getElementById('joinBox');
 
 const phaseEl = document.getElementById('phase');
@@ -23,14 +22,6 @@ let selfId = null;
 let gameState = null;
 let socket = null;
 let eHeld = false;
-
-function getServerUrl() {
-  const fromQuery = new URLSearchParams(window.location.search).get('server');
-  if (fromQuery) return fromQuery;
-
-  const fromStorage = localStorage.getItem('snakecs2d_server');
-  return fromStorage || '';
-}
 
 function formatTimer(ticks) {
   if (!gameState) return '--';
@@ -223,15 +214,7 @@ window.addEventListener('blur', () => {
 
 joinBtn.addEventListener('click', () => {
   const name = nameInput.value.trim() || 'Player';
-  const serverUrl = serverInput.value.trim();
-
-  if (serverUrl) {
-    localStorage.setItem('snakecs2d_server', serverUrl);
-  } else {
-    localStorage.removeItem('snakecs2d_server');
-  }
-
-  socket = io(serverUrl || undefined, {
+  socket = io({
     transports: ['websocket', 'polling']
   });
   eHeld = false;
@@ -250,9 +233,7 @@ joinBtn.addEventListener('click', () => {
   socket.emit('join', name);
   joinBtn.disabled = true;
   nameInput.disabled = true;
-  serverInput.disabled = true;
 });
 
 canvas.width = 1020;
 canvas.height = 660;
-serverInput.value = getServerUrl();

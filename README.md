@@ -31,13 +31,27 @@ This project has 2 parts:
 - Frontend: static files in `public/`
 - Realtime backend: `server.js` (Node + Socket.IO)
 
-For internet multiplayer, host the backend on a Node host (Render, Railway, Fly.io, etc.) and connect frontend to it.
+For the simplest setup, deploy only the backend (`server.js`) and open that URL directly: it serves both the page and Socket.IO.
 
+<<<<<<< HEAD
+=======
+## Netlify (Optional)
+
+Yes, you can upload this to Netlify for the frontend.
+
+- Netlify can host `public/` with `netlify.toml` already configured.
+- The multiplayer Socket.IO server **cannot** run on Netlify static hosting.
+- Use a separate Node host for `server.js`.
+
+Example backend URL:
+
+`https://your-snakecs2d-backend.onrender.com`
+
+>>>>>>> b6b9ef8 (simplify snake)
 ## Suggested Deploy Setup
 
 1. Deploy backend (`server.js`) to Render/Railway/Fly.
-2. Deploy frontend (`public/`) to Netlify.
-3. Open your Netlify app and set the backend URL in the join form.
+2. Open the backend URL and play directly.
 
 ## Render Blueprint
 
@@ -48,4 +62,3 @@ A ready-to-use Render blueprint is included:
 It creates:
 
 - `snakecs2d-backend` (Node web service for Socket.IO)
-- `snakecs2d-frontend` (static site for `public/`)
