@@ -8,9 +8,9 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
-
-  - type: static
+  - type: web
     name: snakecs2d-frontend
+    runtime: static
     buildCommand: ""
     staticPublishPath: public
     routes:
