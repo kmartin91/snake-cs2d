@@ -4,24 +4,34 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
-const TICK_MS = 130;
+const TICK_MS = Number(process.env.TICK_MS || 80);
 
 const GRID = {
   width: 34,
   height: 22
 };
+const SITE_RADIUS = 2;
 
 const START_LENGTH = 4;
 const MAX_CRATES = 4;
-const ROUND_FREEZE_TICKS = 24;
-const RESPAWN_TICKS = 20;
-const ROUND_RESULT_TICKS = 18;
-const PLANT_TICKS = 8;
-const DEFUSE_TICKS = 10;
-const BOMB_TIMER_TICKS = Math.round(40_000 / TICK_MS);
+const ROUND_FREEZE_MS = 3_000;
+const ROUND_RESULT_MS = 2_300;
+const ROUND_TIME_MS = 45_000;
+const PLANT_MS = 2_000;
+const DEFUSE_MS = 2_000;
+const BOMB_TIMER_MS = 15_000;
 const MATCH_WIN_ROUNDS = 13;
 const HALFTIME_AFTER_ROUNDS = 12;
-const MATCH_RESULT_TICKS = 46;
+const MATCH_RESULT_MS = 6_000;
+
+const toTicks = (ms) => Math.max(1, Math.ceil(ms / TICK_MS));
+const ROUND_FREEZE_TICKS = toTicks(ROUND_FREEZE_MS);
+const ROUND_TIME_TICKS = toTicks(ROUND_TIME_MS);
+const ROUND_RESULT_TICKS = toTicks(ROUND_RESULT_MS);
+const PLANT_TICKS = toTicks(PLANT_MS);
+const DEFUSE_TICKS = toTicks(DEFUSE_MS);
+const BOMB_TIMER_TICKS = toTicks(BOMB_TIMER_MS);
+const MATCH_RESULT_TICKS = toTicks(MATCH_RESULT_MS);
 
 const DIRECTIONS = {
   up: { x: 0, y: -1 },
@@ -61,6 +71,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 const state = {
   tick: 0,
   roundFreezeTicks: ROUND_FREEZE_TICKS,
+  roundTimerTicks: ROUND_TIME_TICKS,
   roundsPlayed: 0,
   didHalftimeSwap: false,
   matchOver: false,
@@ -88,7 +99,7 @@ const state = {
     T: 0,
     CT: 0
   },
-  lastEvent: 'Round started! Ts: grab the bomb and plant with E. CTs: defuse with E.'
+  lastEvent: 'Round started! Ts: hold E in A zone to plant. CTs: hold E on bomb to defuse.'
 };
 
 function randInt(max) {
@@ -104,6 +115,13 @@ function wrapPos(pos) {
 
 function samePos(a, b) {
   return a.x === b.x && a.y === b.y;
+}
+
+function inSiteArea(pos) {
+  return (
+    Math.abs(pos.x - SITE.x) <= SITE_RADIUS &&
+    Math.abs(pos.y - SITE.y) <= SITE_RADIUS
+  );
 }
 
 function directionOpposite(a, b) {
@@ -208,6 +226,7 @@ function refillCrates() {
 
 function resetRound(message) {
   state.roundFreezeTicks = ROUND_FREEZE_TICKS;
+  state.roundTimerTicks = ROUND_TIME_TICKS;
   state.lastEvent = message;
   state.bomb.plantProgress = 0;
   state.bomb.plantBy = null;
@@ -282,7 +301,7 @@ function killPlayer(player, byFaction = null, deathPos = null) {
   if (!player.alive) return;
   player.alive = false;
   player.deaths += 1;
-  player.respawnTicks = RESPAWN_TICKS;
+  player.respawnTicks = 0;
 
   if (player.hasBomb) {
     dropBomb(deathPos || player.snake[0], player.id);
@@ -308,14 +327,19 @@ function allFactionDead(faction) {
 function serialize() {
   return {
     tick: state.tick,
+    tickMs: TICK_MS,
     grid: GRID,
     site: SITE,
+    siteRadius: SITE_RADIUS,
     roundFreezeTicks: state.roundFreezeTicks,
+    roundTimerTicks: state.roundTimerTicks,
     roundsPlayed: state.roundsPlayed,
     didHalftimeSwap: state.didHalftimeSwap,
     matchOver: state.matchOver,
     matchResultTicks: state.matchResultTicks,
     matchWinRounds: MATCH_WIN_ROUNDS,
+    plantTicks: PLANT_TICKS,
+    defuseTicks: DEFUSE_TICKS,
     roundResult: state.roundResult,
     players: [...state.players.values()].map((p) => ({
       id: p.id,
@@ -373,25 +397,34 @@ function runTick() {
     return;
   }
 
+  if (state.bomb.state !== 'planted') {
+    state.roundTimerTicks -= 1;
+    if (state.roundTimerTicks <= 0) {
+      endRound('CT', 'time expired');
+      io.emit('state', serialize());
+      return;
+    }
+  }
+
   const livingPlayers = [...state.players.values()].filter((p) => p.alive);
 
   const nextHeads = new Map();
   const actionHolders = new Set();
   for (const player of livingPlayers) {
     const head = player.snake[0];
-    const isPlantingHold =
+    const canHoldPlant =
       state.bomb.state === 'carried' &&
       state.bomb.carrierId === player.id &&
       player.faction === 'T' &&
       player.actionHeld &&
-      samePos(head, SITE);
-    const isDefusingHold =
+      inSiteArea(head);
+    const canHoldDefuse =
       state.bomb.state === 'planted' &&
       player.faction === 'CT' &&
       player.actionHeld &&
       samePos(head, state.bomb);
 
-    if (isPlantingHold || isDefusingHold) {
+    if (canHoldPlant || canHoldDefuse) {
       actionHolders.add(player.id);
       nextHeads.set(player.id, head);
       continue;
@@ -408,8 +441,7 @@ function runTick() {
 
   const occupiedBefore = [];
   for (const player of livingPlayers) {
-    const isHoldingAction = actionHolders.has(player.id);
-    const tailWillMove = !isHoldingAction && player.growBy === 0;
+    const tailWillMove = !actionHolders.has(player.id) && player.growBy === 0;
     const body = tailWillMove ? player.snake.slice(0, -1) : player.snake.slice();
     for (const seg of body) {
       occupiedBefore.push({ owner: player.id, pos: seg });
@@ -486,7 +518,7 @@ function runTick() {
       state.bomb.x = effectiveHead.x;
       state.bomb.y = effectiveHead.y;
 
-      if (samePos(effectiveHead, SITE) && player.faction === 'T' && player.actionHeld) {
+      if (inSiteArea(effectiveHead) && player.faction === 'T' && player.actionHeld) {
         state.bomb.plantBy = player.id;
         state.bomb.plantProgress += 1;
         if (state.bomb.plantProgress >= PLANT_TICKS) {
@@ -501,16 +533,6 @@ function runTick() {
       } else {
         state.bomb.plantProgress = 0;
         state.bomb.plantBy = null;
-      }
-    }
-  }
-
-  for (const player of state.players.values()) {
-    if (!player.alive && player.respawnTicks > 0) {
-      player.respawnTicks -= 1;
-      if (player.respawnTicks === 0) {
-        spawnPlayer(player);
-        player.actionHeld = false;
       }
     }
   }

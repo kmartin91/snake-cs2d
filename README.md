@@ -6,8 +6,10 @@ A multiplayer browser game that mixes Snake with Counter-Strike objectives.
 
 - Players are auto-assigned to `T` (Terrorists) or `CT` (Counter-Terrorists).
 - Each player is a snake that grows by collecting ammo crates.
-- `T` players must pick up the bomb, reach center site, and hold `E` to plant.
+- `T` players must pick up the bomb, enter center site zone, and hold `E` to plant.
 - `CT` players must hold `E` on the planted bomb to defuse.
+- Round timer is 45s, bomb timer is 15s, plant/defuse are 2s each.
+- Mobile is supported with on-screen directional buttons and a hold action button.
 - Snake collision rules still apply: hit a body/head, die, then respawn.
 - Rounds score by objective and eliminations, first team to 13 rounds wins.
 - Sides swap after 12 completed rounds.
@@ -23,6 +25,11 @@ A multiplayer browser game that mixes Snake with Counter-Strike objectives.
    npm run dev
    ```
 3. Open [http://localhost:3000](http://localhost:3000)
+
+Optional performance tuning:
+
+- Set `TICK_MS` (default `80`) to tune server update rate.
+- Example: `TICK_MS=66 npm run dev` for a faster feel.
 
 ## Multiplayer Hosting Strategy
 
