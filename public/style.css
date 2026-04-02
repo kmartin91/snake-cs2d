@@ -1,135 +1,159 @@
 :root {
-  --bg: #091014;
-  --panel: #101c22;
-  --panel-border: #1d3845;
-  --text: #f3f7f8;
-  --muted: #93a7af;
-  --t: #ff6645;
-  --ct: #4fc4ff;
-  --crate: #f8d66d;
-  --bomb: #ff2f2f;
-  --site: #79ff9e;
+  --bg: #0b1116;
+  --hud: rgba(12, 20, 26, 0.86);
+  --hud-border: #284554;
+  --text: #edf5f8;
+  --muted: #9ab2bc;
+  --t: #ff724f;
+  --ct: #62cfff;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
   margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
   font-family: "Space Mono", monospace;
   color: var(--text);
   background:
-    radial-gradient(circle at 10% 0%, #1a2d36 0, transparent 35%),
-    radial-gradient(circle at 80% 100%, #233642 0, transparent 30%),
-    linear-gradient(180deg, #05080a, var(--bg));
-  min-height: 100vh;
+    radial-gradient(circle at 10% 0%, #1b2f39 0, transparent 38%),
+    radial-gradient(circle at 100% 100%, #2f4451 0, transparent 32%),
+    linear-gradient(180deg, #06090c, var(--bg));
   overscroll-behavior: none;
 }
 
-.layout {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 1.25rem;
-  display: grid;
-  grid-template-columns: 2.2fr 1fr;
-  gap: 1rem;
+.app-shell {
+  width: 100%;
+  height: 100%;
+  padding: 0.65rem;
 }
 
-.panel {
-  background: color-mix(in srgb, var(--panel), transparent 14%);
-  border: 1px solid var(--panel-border);
-  border-radius: 18px;
-  padding: 1rem;
-  backdrop-filter: blur(2px);
-}
-
-.banner h1 {
-  margin: 0;
-  font-family: "Black Ops One", system-ui;
-  letter-spacing: 0.08em;
-  font-size: clamp(1.6rem, 2.3vw, 2.4rem);
-}
-
-.banner p {
-  margin: 0.35rem 0 0.8rem;
-  color: var(--muted);
+.stage {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #2a4c5f;
+  background: #0a1319;
 }
 
 #game {
-  width: 100%;
-  max-height: 68vh;
-  aspect-ratio: 34 / 22;
-  border-radius: 14px;
-  border: 1px solid #28566c;
-  background: #071017;
-  box-shadow: inset 0 0 45px color-mix(in srgb, #4fc4ff, transparent 90%);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: block;
   touch-action: none;
 }
 
-.status {
-  margin-top: 0.65rem;
+.hud-top {
+  position: absolute;
+  top: 0.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 1.2rem));
+  display: grid;
+  grid-template-columns: 130px 1fr 130px;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.team-score,
+.hud-center,
+.hud-left,
+.hud-right,
+.hud-bottom,
+.join-panel,
+.rules-modal {
+  background: var(--hud);
+  border: 1px solid var(--hud-border);
+  backdrop-filter: blur(4px);
+}
+
+.team-score {
+  border-radius: 12px;
+  padding: 0.4rem 0.6rem;
   display: flex;
   justify-content: space-between;
-  gap: 0.7rem;
-  color: var(--muted);
-  font-size: 0.88rem;
+  align-items: center;
+  font-family: "Black Ops One", system-ui;
+  letter-spacing: 0.04em;
+  font-size: 1.15rem;
 }
 
-.join-box {
-  display: grid;
-  gap: 0.45rem;
-  margin-bottom: 1rem;
-}
-
-.join-box input,
-.join-box button {
-  padding: 0.6rem 0.7rem;
-  border-radius: 10px;
-  border: 1px solid #244350;
-  background: #09141b;
-  color: var(--text);
-  font: inherit;
-}
-
-.join-box button {
-  background: linear-gradient(120deg, #15425b, #1f6a91);
-  border-color: #2f7fa7;
-  cursor: pointer;
-}
-
-.score-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.7rem;
-  margin: 0.8rem 0;
-}
-
-.team {
-  border-radius: 12px;
-  padding: 0.6rem;
-  border: 1px solid;
-  display: grid;
-  gap: 0.2rem;
-}
-
-.team .label {
-  font-size: 0.75rem;
-  color: var(--muted);
+.team-score .name {
+  font-size: 0.8rem;
+  font-family: "Space Mono", monospace;
 }
 
 .team-t {
-  border-color: color-mix(in srgb, var(--t), transparent 40%);
+  border-color: color-mix(in srgb, var(--t), transparent 38%);
 }
 
 .team-ct {
-  border-color: color-mix(in srgb, var(--ct), transparent 40%);
+  border-color: color-mix(in srgb, var(--ct), transparent 38%);
 }
 
-h2 {
-  font-size: 0.95rem;
-  margin: 1rem 0 0.45rem;
-  color: #bfd7e1;
+.hud-center {
+  border-radius: 12px;
+  text-align: center;
+  padding: 0.35rem 0.5rem;
+}
+
+.hud-center h1 {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: 0.07em;
+  font-family: "Black Ops One", system-ui;
+}
+
+.hud-center p {
+  margin: 0.14rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.hud-right {
+  position: absolute;
+  right: 0.6rem;
+  top: 4.85rem;
+  width: 270px;
+  border-radius: 12px;
+  padding: 0.58rem;
+  max-height: calc(100% - 10.7rem);
+  overflow: auto;
+}
+
+.hud-left {
+  position: absolute;
+  left: 0.6rem;
+  top: 4.85rem;
+  width: 270px;
+  border-radius: 12px;
+  padding: 0.58rem;
+}
+
+.hud-left h2,
+.hud-right h2 {
+  margin: 0 0 0.45rem;
+  font-size: 0.83rem;
+  color: var(--muted);
+}
+
+.hud-left p {
+  margin: 0.28rem 0;
+  color: var(--muted);
+  font-size: 0.73rem;
+  line-height: 1.35;
 }
 
 #leaderboard {
@@ -138,31 +162,93 @@ h2 {
   padding: 0;
   display: grid;
   gap: 0.25rem;
-  max-height: 200px;
-  overflow: auto;
 }
 
 #leaderboard li {
   display: flex;
   justify-content: space-between;
-  gap: 0.4rem;
-  padding: 0.35rem 0.45rem;
-  border: 1px solid #213744;
+  gap: 0.3rem;
+  padding: 0.34rem 0.45rem;
   border-radius: 8px;
-  font-size: 0.8rem;
+  border: 1px solid #2a4250;
+  font-size: 0.74rem;
 }
 
-.rules p {
-  margin: 0.25rem 0;
+.hud-bottom {
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  border-radius: 12px;
+  padding: 0.46rem 0.7rem;
+  color: var(--muted);
+  font-size: 0.77rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.join-panel,
+.rules-modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 14px;
+  padding: 1rem;
+  width: min(380px, calc(100% - 1.3rem));
+  z-index: 5;
+}
+
+.join-panel h2,
+.rules-modal h2 {
+  margin: 0 0 0.65rem;
+  font-family: "Black Ops One", system-ui;
+  font-size: 1.05rem;
+}
+
+.join-panel label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.join-panel input,
+.join-panel button,
+.rules-modal button {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.62rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid #2d4f61;
+  background: #0f1b22;
+  color: var(--text);
+  font: inherit;
+}
+
+.join-panel button,
+.rules-modal button {
+  border-color: #3e6a82;
+  background: linear-gradient(130deg, #1d4e6c, #19415a);
+  cursor: pointer;
+}
+
+.rules-modal p {
+  margin: 0.32rem 0;
   color: var(--muted);
   font-size: 0.8rem;
 }
 
+.hidden {
+  display: none;
+}
+
 .touch-controls {
+  position: absolute;
+  left: 0.6rem;
+  right: 0.6rem;
+  bottom: 3.7rem;
   display: none;
   grid-template-columns: 1fr auto;
-  gap: 0.9rem;
-  margin-top: 0.8rem;
   align-items: center;
 }
 
@@ -171,8 +257,6 @@ h2 {
   grid-template-columns: repeat(3, minmax(46px, 62px));
   grid-template-rows: repeat(3, minmax(46px, 62px));
   gap: 0.45rem;
-  justify-content: center;
-  align-items: center;
 }
 
 .touch-btn {
@@ -212,24 +296,61 @@ h2 {
 }
 
 .touch-btn.action {
-  padding: 0.9rem 1rem;
-  min-width: 108px;
-  min-height: 108px;
+  min-width: 110px;
+  min-height: 110px;
   border-radius: 999px;
   border-color: #7e3a2f;
   background: linear-gradient(160deg, #603028, #3f1f1b);
 }
 
 @media (max-width: 980px) {
-  .layout {
-    grid-template-columns: 1fr;
-    padding: 0.75rem;
+  .app-shell {
+    padding: 0;
   }
 
-  .status {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.2rem;
+  .stage {
+    border-radius: 0;
+    border: none;
+  }
+
+  .hud-right {
+    display: none;
+  }
+
+  .hud-left {
+    display: none;
+  }
+
+  .hud-top {
+    width: calc(100% - 0.6rem);
+    top: 0.3rem;
+    grid-template-columns: 92px 1fr 92px;
+    gap: 0.3rem;
+  }
+
+  .team-score {
+    font-size: 0.95rem;
+    padding: 0.3rem 0.45rem;
+  }
+
+  .team-score .name {
+    font-size: 0.68rem;
+  }
+
+  .hud-center h1 {
+    font-size: 0.82rem;
+  }
+
+  .hud-center p {
+    font-size: 0.64rem;
+  }
+
+  .hud-bottom {
+    left: 0.3rem;
+    right: 0.3rem;
+    bottom: 0.3rem;
+    padding: 0.38rem 0.5rem;
+    font-size: 0.67rem;
   }
 
   .touch-controls {

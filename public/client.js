@@ -1,8 +1,11 @@
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const stageEl = document.getElementById('stage');
 const joinBtn = document.getElementById('joinBtn');
 const nameInput = document.getElementById('nameInput');
 const joinBox = document.getElementById('joinBox');
+const rulesModal = document.getElementById('rulesModal');
+const rulesBtn = document.getElementById('rulesBtn');
 
 const phaseEl = document.getElementById('phase');
 const eventEl = document.getElementById('event');
@@ -32,6 +35,10 @@ let isAnimating = false;
 let staticLayer = null;
 let staticLayerKey = '';
 let directionHoldTimer = null;
+let hasJoined = false;
+let rulesDismissed = false;
+let prevRoundsPlayed = 0;
+let prevMatchOver = false;
 const INTERP_DELAY_MS = 90;
 
 function formatTimer(ticks) {
@@ -239,25 +246,24 @@ function clearStaticLayer() {
 function resizeCanvas() {
   const grid = gameState?.grid || { width: 34, height: 22 };
   const ratio = grid.width / grid.height;
-  const parentWidth = Math.max(320, Math.floor(canvas.parentElement.clientWidth));
-  const viewportMaxHeight = Math.floor(window.innerHeight * 0.62);
+  const stageW = Math.max(320, Math.floor(stageEl.clientWidth));
+  const stageH = Math.max(220, Math.floor(stageEl.clientHeight));
 
-  let width = parentWidth;
+  let width = stageW;
   let height = Math.floor(width / ratio);
-
-  if (height > viewportMaxHeight) {
-    height = viewportMaxHeight;
+  if (height > stageH) {
+    height = stageH;
     width = Math.floor(height * ratio);
   }
 
-  const safeWidth = Math.max(320, width);
-  const safeHeight = Math.max(200, height);
-
-  if (canvas.width !== safeWidth || canvas.height !== safeHeight) {
-    canvas.width = safeWidth;
-    canvas.height = safeHeight;
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
     clearStaticLayer();
   }
+
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
 }
 
 function draw(renderState) {
@@ -415,7 +421,23 @@ function setActionHeld(nextHeld) {
   socket.emit('action', nextHeld);
 }
 
+function maybeShowRulesModal() {
+  if (!hasJoined || !gameState || !rulesModal) return;
+  const isMatchStart = gameState.roundsPlayed === 0 && gameState.roundFreezeTicks > 0 && !gameState.matchOver;
+  if (isMatchStart && !rulesDismissed) {
+    rulesModal.classList.remove('hidden');
+  }
+}
+
 window.addEventListener('keydown', (e) => {
+  const target = e.target;
+  const isTyping =
+    target instanceof HTMLElement &&
+    (target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.isContentEditable);
+  if (isTyping) return;
+
   const key = e.key.toLowerCase();
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'].includes(key)) {
     e.preventDefault();
@@ -479,6 +501,13 @@ if (touchActionBtn) {
   touchActionBtn.addEventListener('pointerleave', onActionUp);
 }
 
+if (rulesBtn && rulesModal) {
+  rulesBtn.addEventListener('click', () => {
+    rulesDismissed = true;
+    rulesModal.classList.add('hidden');
+  });
+}
+
 joinBtn.addEventListener('click', () => {
   const name = nameInput.value.trim() || 'Player';
   socket = io({
@@ -488,10 +517,18 @@ joinBtn.addEventListener('click', () => {
 
   socket.on('joined', ({ id, faction }) => {
     selfId = id;
-    joinBox.innerHTML = `<p>Connected as <strong>${faction}</strong>.</p>`;
+    hasJoined = true;
+    joinBox.classList.add('hidden');
+    phaseEl.textContent = `Connected as ${faction}`;
   });
 
   socket.on('state', (nextState) => {
+    if ((prevRoundsPlayed > 0 || prevMatchOver) && nextState.roundsPlayed === 0 && nextState.roundFreezeTicks > 0) {
+      rulesDismissed = false;
+    }
+    prevRoundsPlayed = nextState.roundsPlayed;
+    prevMatchOver = Boolean(nextState.matchOver);
+
     const now = performance.now();
     prevSnapshot = nextSnapshot || nextState;
     prevSnapshotAt = nextSnapshotAt || now;
@@ -500,6 +537,7 @@ joinBtn.addEventListener('click', () => {
     gameState = nextState;
     resizeCanvas();
     updateHud();
+    maybeShowRulesModal();
 
     if (!isAnimating) {
       isAnimating = true;

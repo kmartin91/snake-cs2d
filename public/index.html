@@ -13,17 +13,40 @@
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <main class="layout">
-      <section class="panel game-panel">
-        <header class="banner">
-          <h1>Snake CS2D</h1>
-          <p>Plant or Defuse in a Snake arena.</p>
-        </header>
-
+    <main class="app-shell">
+      <section class="stage" id="stage">
         <canvas id="game" width="1020" height="660"></canvas>
 
-        <div class="status">
-          <span id="phase">Waiting players...</span>
+        <header class="hud-top">
+          <div class="team-score team-t">
+            <span class="name">T</span>
+            <span id="scoreT">0</span>
+          </div>
+          <div class="hud-center">
+            <h1>Snake CS2D</h1>
+            <p id="phase">Waiting players...</p>
+          </div>
+          <div class="team-score team-ct">
+            <span class="name">CT</span>
+            <span id="scoreCT">0</span>
+          </div>
+        </header>
+
+        <aside class="hud-right">
+          <h2>Leaderboard</h2>
+          <ul id="leaderboard"></ul>
+        </aside>
+
+        <aside class="hud-left">
+          <h2>Round Rules</h2>
+          <p>T: pick bomb, hold E in A zone (2s).</p>
+          <p>CT: hold E on planted bomb (2s).</p>
+          <p>Counterplay: collide with the planter/defuser to interrupt the action.</p>
+          <p>Round 45s. Bomb 15s. First to 13.</p>
+          <p>Sides swap after 12 rounds.</p>
+        </aside>
+
+        <div class="hud-bottom">
           <span id="event">Connect to start</span>
         </div>
 
@@ -36,44 +59,23 @@
           </div>
           <button class="touch-btn action" id="touchAction">HOLD E</button>
         </section>
-      </section>
 
-      <aside class="panel side-panel">
-        <div class="join-box" id="joinBox">
+        <section class="join-panel" id="joinBox">
+          <h2>Join Match</h2>
           <label for="nameInput">Agent Name</label>
           <input id="nameInput" maxlength="18" placeholder="Phoenix" />
-          <button id="joinBtn">Join Match</button>
-        </div>
-
-        <div class="score-row">
-          <div class="team team-t">
-            <span class="label">Terrorists</span>
-            <span id="scoreT">0</span>
-          </div>
-          <div class="team team-ct">
-            <span class="label">Counter-Terrorists</span>
-            <span id="scoreCT">0</span>
-          </div>
-        </div>
-
-        <section>
-          <h2>Leaderboard</h2>
-          <ul id="leaderboard"></ul>
+          <button id="joinBtn">Join</button>
         </section>
 
-        <section class="rules">
-          <h2>How It Mixes Snake + CS</h2>
-          <p>Collect ammo crates to grow your snake body.</p>
-          <p>T side: carry the bomb to site A zone (center), then hold E to plant.</p>
-          <p>CT side: reach planted bomb and hold E to defuse.</p>
-          <p>Colliding with any snake body or head duel kills both.</p>
+        <section class="rules-modal hidden" id="rulesModal">
+          <h2>Round Rules</h2>
+          <p>T side: pick bomb, reach A zone, hold E to plant (2s).</p>
+          <p>CT side: stand on planted bomb, hold E to defuse (2s).</p>
+          <p>Counterplay: collide with the planter/defuser to interrupt the action.</p>
+          <p>Round: 45s. Bomb: 15s. First team to 13, side swap after 12 rounds.</p>
+          <button id="rulesBtn">Let&apos;s Go</button>
         </section>
-
-        <section>
-          <h2>Controls</h2>
-          <p>Arrow keys or WASD to move, hold E for plant/defuse.</p>
-        </section>
-      </aside>
+      </section>
     </main>
 
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
