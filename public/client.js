@@ -39,7 +39,10 @@ let hasJoined = false;
 let rulesDismissed = false;
 let prevRoundsPlayed = 0;
 let prevMatchOver = false;
-const INTERP_DELAY_MS = 90;
+const renderSnakeCache = new Map();
+const renderBombCache = { x: 0, y: 0, ready: false };
+const INTERP_DELAY_MS = 130;
+const SMOOTH_ALPHA = 0.32;
 
 function formatTimer(ticks) {
   if (!gameState) return '--';
@@ -73,6 +76,10 @@ function lerpWrap(a, b, size, t) {
   if (value < 0) value += size;
   if (value >= size) value -= size;
   return value;
+}
+
+function smoothWrap(curr, target, size, alpha) {
+  return lerpWrap(curr, target, size, alpha);
 }
 
 function cellRect(x, y, w, h, cellSize) {
@@ -238,6 +245,57 @@ function fillCell(cell, cellSize, color, pad = 2) {
   ctx.fillRect(cell.x * cellSize + pad, cell.y * cellSize + pad, cellSize - pad * 2, cellSize - pad * 2);
 }
 
+function getSmoothedPlayers(renderState) {
+  const { grid, players } = renderState;
+  const liveIds = new Set(players.map((p) => p.id));
+  for (const cachedId of renderSnakeCache.keys()) {
+    if (!liveIds.has(cachedId)) renderSnakeCache.delete(cachedId);
+  }
+
+  return players.map((player) => {
+    const targetSnake = player.snake || [];
+    const cached = renderSnakeCache.get(player.id);
+
+    if (!cached || cached.length !== targetSnake.length) {
+      const initSnake = targetSnake.map((seg) => ({ x: seg.x, y: seg.y }));
+      renderSnakeCache.set(player.id, initSnake);
+      return { ...player, snake: initSnake };
+    }
+
+    const smoothed = cached.map((seg, idx) => {
+      const target = targetSnake[idx];
+      return {
+        x: smoothWrap(seg.x, target.x, grid.width, SMOOTH_ALPHA),
+        y: smoothWrap(seg.y, target.y, grid.height, SMOOTH_ALPHA)
+      };
+    });
+
+    renderSnakeCache.set(player.id, smoothed);
+    return { ...player, snake: smoothed };
+  });
+}
+
+function getSmoothedBomb(renderState) {
+  const { grid, bomb } = renderState;
+  if (!bomb) return bomb;
+
+  if (!renderBombCache.ready) {
+    renderBombCache.x = bomb.x;
+    renderBombCache.y = bomb.y;
+    renderBombCache.ready = true;
+    return bomb;
+  }
+
+  renderBombCache.x = smoothWrap(renderBombCache.x, bomb.x, grid.width, SMOOTH_ALPHA);
+  renderBombCache.y = smoothWrap(renderBombCache.y, bomb.y, grid.height, SMOOTH_ALPHA);
+
+  return {
+    ...bomb,
+    x: renderBombCache.x,
+    y: renderBombCache.y
+  };
+}
+
 function clearStaticLayer() {
   staticLayer = null;
   staticLayerKey = '';
@@ -269,7 +327,9 @@ function resizeCanvas() {
 function draw(renderState) {
   if (!renderState) return;
 
-  const { grid, players, crates, site, bomb, siteRadius } = renderState;
+  const { grid, crates, site, siteRadius } = renderState;
+  const players = getSmoothedPlayers(renderState);
+  const bomb = getSmoothedBomb(renderState);
   const cellSize = canvas.width / grid.width;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);

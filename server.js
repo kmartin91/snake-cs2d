@@ -4,7 +4,7 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || 3000;
-const TICK_MS = Number(process.env.TICK_MS || 80);
+const TICK_MS = Number(process.env.TICK_MS || 150);
 
 const GRID = {
   width: 34,
@@ -17,8 +17,8 @@ const MAX_CRATES = 4;
 const ROUND_FREEZE_MS = 3_000;
 const ROUND_RESULT_MS = 2_300;
 const ROUND_TIME_MS = 45_000;
-const PLANT_MS = 2_000;
-const DEFUSE_MS = 2_000;
+const PLANT_MS = 1_000;
+const DEFUSE_MS = 1_000;
 const BOMB_TIMER_MS = 15_000;
 const MATCH_WIN_ROUNDS = 13;
 const HALFTIME_AFTER_ROUNDS = 12;
