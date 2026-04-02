@@ -53,4 +53,4 @@ A ready-to-use Render blueprint is included:
 
 It creates:
 
-- `snakecs2d-backend` (Node web service for Socket.IO)
+- `snakecs2d` (Node web service for Socket.IO)
