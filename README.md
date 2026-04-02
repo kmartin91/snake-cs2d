@@ -40,21 +40,6 @@ This project has 2 parts:
 
 For the simplest setup, deploy only the backend (`server.js`) and open that URL directly: it serves both the page and Socket.IO.
 
-<<<<<<< HEAD
-=======
-## Netlify (Optional)
-
-Yes, you can upload this to Netlify for the frontend.
-
-- Netlify can host `public/` with `netlify.toml` already configured.
-- The multiplayer Socket.IO server **cannot** run on Netlify static hosting.
-- Use a separate Node host for `server.js`.
-
-Example backend URL:
-
-`https://your-snakecs2d-backend.onrender.com`
-
->>>>>>> b6b9ef8 (simplify snake)
 ## Suggested Deploy Setup
 
 1. Deploy backend (`server.js`) to Render/Railway/Fly.
