@@ -25,7 +25,7 @@ export class Menu {
       teamSize: '3',
       difficulty: 'normal',
       team: 'auto',
-      winRounds: '5',
+      scoreToWin: '25',
       roomSize: '4',
       roomBots: '1',
       roomPublic: '0',
@@ -59,7 +59,7 @@ export class Menu {
         teamSize: Number(this.opts.teamSize),
         difficulty: this.opts.difficulty,
         team: this.opts.team,
-        winRounds: Number(this.opts.winRounds)
+        scoreToWin: Number(this.opts.scoreToWin)
       })
     );
     $('quickBtn').addEventListener('click', () => actions.quick(this.name()));
@@ -156,17 +156,13 @@ export class Menu {
     }
 
     const st = s.stats;
-    const hs = st.kills ? Math.round((100 * st.headshots) / st.kills) : 0;
     const kd = (st.kills / Math.max(1, st.deaths)).toFixed(2);
     const cells = [
       ['Matchs', st.matches],
       ['Victoires', st.wins],
       ['Kills', st.kills],
       ['K/D', kd],
-      ['Headshots', `${hs}%`],
-      ['MVP', st.mvps],
-      ['Bombes posées', st.plants],
-      ['Désamorçages', st.defuses],
+      ['Soldats abattus', st.downs || 0],
       ['Record kills', st.bestKills],
       ['Meilleure série', s.bestStreak],
       ['XP totale', s.total],

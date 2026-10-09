@@ -1,23 +1,22 @@
-const DIR_KEYS = {
-  KeyW: 0,
-  ArrowUp: 0,
-  KeyD: 1,
-  ArrowRight: 1,
-  KeyS: 2,
-  ArrowDown: 2,
-  KeyA: 3,
-  ArrowLeft: 3
+const MOVE_KEYS = {
+  KeyW: [0, -1],
+  ArrowUp: [0, -1],
+  KeyS: [0, 1],
+  ArrowDown: [0, 1],
+  KeyA: [-1, 0],
+  ArrowLeft: [-1, 0],
+  KeyD: [1, 0],
+  ArrowRight: [1, 0]
 };
 
 const NADE_KEYS = { KeyG: 'he', KeyF: 'flash', KeyC: 'smoke' };
 
 export const KEY_HELP = [
-  ['ZQSD / WASD / ↑←↓→', 'Diriger le serpent'],
-  ['Espace / clic', 'Tirer (coûte 1 segment)'],
-  ['Shift', 'Sprint'],
-  ['E (maintenu)', 'Poser / désamorcer'],
-  ['G · F · C', 'HE · Flash · Smoke'],
-  ['B puis 1-6', 'Acheter (freeze time)'],
+  ['ZQSD / WASD / flèches', 'Diriger le leader (il avance toujours, l\'escouade suit)'],
+  ['Souris', 'Viser — toute l\'escouade tire vers le viseur'],
+  ['Clic / Espace', 'Tirer (plus précis en ligne droite)'],
+  ['R', 'Recharger'],
+  ['G · F · C', 'HE · Flash · Smoke vers le viseur'],
   ['Tab', 'Scores'],
   ['Entrée', 'Chat'],
   ['M', 'Couper le son'],
@@ -27,16 +26,36 @@ export const KEY_HELP = [
 const isTyping = (el) => el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 
 export function bindInput(canvas, h) {
-  const held = { fire: false, boost: false, action: false };
+  const held = { fire: false };
+  const keys = new Set();
+  let lastMove = '0,0';
+
   const set = (key, value) => {
     if (held[key] === value) return;
     held[key] = value;
     h[key](value);
   };
+
+  const sendMove = () => {
+    let x = 0;
+    let y = 0;
+    for (const code of keys) {
+      x += MOVE_KEYS[code][0];
+      y += MOVE_KEYS[code][1];
+    }
+    x = Math.sign(x);
+    y = Math.sign(y);
+    const key = `${x},${y}`;
+    if (key === lastMove) return;
+    lastMove = key;
+    const len = Math.hypot(x, y) || 1;
+    h.move(x / len, y / len);
+  };
+
   const releaseAll = () => {
     set('fire', false);
-    set('boost', false);
-    set('action', false);
+    keys.clear();
+    sendMove();
     h.scoreboard(false);
   };
 
@@ -47,18 +66,14 @@ export function bindInput(canvas, h) {
       return;
     }
     if (!h.active()) return;
-    if (e.code in DIR_KEYS) {
+    if (e.code in MOVE_KEYS) {
       e.preventDefault();
-      if (!e.repeat) h.dir(DIR_KEYS[e.code]);
+      keys.add(e.code);
+      sendMove();
       return;
     }
     if (e.code in NADE_KEYS) {
       h.nade(NADE_KEYS[e.code]);
-      return;
-    }
-    const digit = /^(Digit|Numpad)([1-6])$/.exec(e.code);
-    if (digit) {
-      h.buy(Number(digit[2]) - 1);
       return;
     }
     switch (e.code) {
@@ -66,15 +81,8 @@ export function bindInput(canvas, h) {
         e.preventDefault();
         set('fire', true);
         break;
-      case 'ShiftLeft':
-      case 'ShiftRight':
-        set('boost', true);
-        break;
-      case 'KeyE':
-        set('action', true);
-        break;
-      case 'KeyB':
-        h.toggleBuy();
+      case 'KeyR':
+        h.reload();
         break;
       case 'Tab':
         e.preventDefault();
@@ -93,26 +101,17 @@ export function bindInput(canvas, h) {
   });
 
   window.addEventListener('keyup', (e) => {
-    switch (e.code) {
-      case 'Space':
-        set('fire', false);
-        break;
-      case 'ShiftLeft':
-      case 'ShiftRight':
-        set('boost', false);
-        break;
-      case 'KeyE':
-        set('action', false);
-        break;
-      case 'Tab':
-        h.scoreboard(false);
-        break;
-      default:
+    if (e.code in MOVE_KEYS) {
+      keys.delete(e.code);
+      sendMove();
+      return;
     }
+    if (e.code === 'Space') set('fire', false);
+    if (e.code === 'Tab') h.scoreboard(false);
   });
 
   window.addEventListener('blur', releaseAll);
-
+  window.addEventListener('mousemove', (e) => h.aimAt(e.clientX, e.clientY));
   canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0 && h.active()) set('fire', true);
   });
@@ -121,55 +120,81 @@ export function bindInput(canvas, h) {
   });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  let swipe = null;
-  canvas.addEventListener(
-    'touchstart',
-    (e) => {
-      const t = e.changedTouches[0];
-      swipe = { x: t.clientX, y: t.clientY };
+  const stick = (padId, knobId, onMove, onEnd) => {
+    const pad = document.getElementById(padId);
+    const knob = document.getElementById(knobId);
+    let pointer = null;
+    const update = (e) => {
+      const r = pad.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height / 2);
+      const d = Math.hypot(dx, dy) || 1;
+      const max = r.width * 0.32;
+      const k = Math.min(d, max) / d;
+      knob.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+      onMove(dx, dy, d, max);
+    };
+    pad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      pointer = e.pointerId;
+      pad.setPointerCapture(e.pointerId);
+      pad.classList.add('active');
+      update(e);
+    });
+    pad.addEventListener('pointermove', (e) => {
+      if (e.pointerId === pointer) update(e);
+    });
+    const end = (e) => {
+      if (e.pointerId !== pointer) return;
+      pointer = null;
+      knob.style.transform = '';
+      pad.classList.remove('active');
+      onEnd();
+    };
+    pad.addEventListener('pointerup', end);
+    pad.addEventListener('pointercancel', end);
+  };
+
+  stick(
+    'movePad',
+    'moveKnob',
+    (dx, dy, d, max) => {
+      if (!h.active() || d < 10) {
+        h.move(0, 0);
+        return;
+      }
+      const k = Math.min(1, d / max);
+      h.move((dx / d) * k, (dy / d) * k);
     },
-    { passive: true }
+    () => h.move(0, 0)
   );
-  canvas.addEventListener(
-    'touchmove',
-    (e) => {
-      if (!swipe || !h.active()) return;
-      const t = e.changedTouches[0];
-      const dx = t.clientX - swipe.x;
-      const dy = t.clientY - swipe.y;
-      if (Math.max(Math.abs(dx), Math.abs(dy)) < 22) return;
-      h.dir(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 1 : 3) : dy > 0 ? 2 : 0);
-      swipe = { x: t.clientX, y: t.clientY };
+  stick(
+    'aimPad',
+    'aimKnob',
+    (dx, dy, d) => {
+      if (d > 12 && h.active()) {
+        h.aimStick(Math.atan2(dy, dx));
+        set('fire', true);
+      } else {
+        set('fire', false);
+      }
     },
-    { passive: true }
+    () => set('fire', false)
   );
 
-  const press = (btn, down, up) => {
+  const press = (btn, fn) => {
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       btn.classList.add('active');
-      down();
+      if (h.active()) fn();
     });
-    const end = (e) => {
-      e.preventDefault();
-      btn.classList.remove('active');
-      if (up) up();
-    };
+    const end = () => btn.classList.remove('active');
     btn.addEventListener('pointerup', end);
     btn.addEventListener('pointercancel', end);
     btn.addEventListener('pointerleave', end);
   };
-
-  for (const btn of document.querySelectorAll('#touch [data-dir]')) {
-    press(btn, () => h.active() && h.dir(Number(btn.dataset.dir)));
-  }
-  for (const btn of document.querySelectorAll('#touch [data-nade]')) {
-    press(btn, () => h.active() && h.nade(btn.dataset.nade));
-  }
-  press(document.getElementById('touchFire'), () => set('fire', true), () => set('fire', false));
-  press(document.getElementById('touchAct'), () => set('action', true), () => set('action', false));
-  press(document.getElementById('touchBoost'), () => set('boost', true), () => set('boost', false));
-  press(document.getElementById('touchBuy'), () => h.toggleBuy());
+  for (const btn of document.querySelectorAll('#touch [data-nade]')) press(btn, () => h.nade(btn.dataset.nade));
+  press(document.getElementById('touchReload'), () => h.reload());
 
   return { releaseAll };
 }

@@ -1,12 +1,12 @@
 import { Game } from '../shared/game.js';
 
 export class LocalSession {
-  constructor({ name, team, teamSize, difficulty, winRounds, skin }, onSnap) {
+  constructor({ name, team, teamSize, difficulty, scoreToWin, skin }, onSnap) {
     this.online = false;
     this.selfId = 'me';
     this.paused = false;
     this.onSnap = onSnap;
-    this.game = new Game({ teamSize, difficulty, winRounds, bots: true });
+    this.game = new Game({ teamSize, difficulty, scoreToWin, bots: true });
     this.game.addPlayer({ id: this.selfId, name, skin, team: team === 'T' || team === 'CT' ? team : null });
     this.timer = setInterval(() => {
       if (this.paused) return;

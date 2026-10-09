@@ -1,5 +1,4 @@
-export const VISION_RADIUS = 7.5;
-export const FOG_PHASES = new Set(['live', 'planted', 'warmup']);
+export const FOG_PHASES = new Set(['countdown', 'live', 'warmup']);
 
 function smokeMask(map, smokes) {
   if (!smokes.length) return null;
@@ -46,23 +45,26 @@ function sees(map, smoke, x0, y0, x1, y1) {
   return true;
 }
 
-export function computeVision(map, heads, smokes, out) {
+export function computeVision(map, sources, smokes, out) {
   const { width, height } = map;
   const mask = out || new Uint8Array(width * height);
   mask.fill(0);
   const smoke = smokeMask(map, smokes);
-  const R = Math.ceil(VISION_RADIUS);
-  const r2 = VISION_RADIUS * VISION_RADIUS;
-  for (const h of heads) {
+  for (const src of sources) {
+    const hx = Math.round(src.x);
+    const hy = Math.round(src.y);
+    const r = src.r;
+    const R = Math.ceil(r);
+    const r2 = r * r;
     for (let dy = -R; dy <= R; dy += 1) {
       for (let dx = -R; dx <= R; dx += 1) {
         if (dx * dx + dy * dy > r2) continue;
-        const x = h.x + dx;
-        const y = h.y + dy;
+        const x = hx + dx;
+        const y = hy + dy;
         if (x < 0 || y < 0 || x >= width || y >= height) continue;
         const i = y * width + x;
         if (mask[i]) continue;
-        if (sees(map, smoke, h.x, h.y, x, y)) mask[i] = 1;
+        if (sees(map, smoke, hx, hy, x, y)) mask[i] = 1;
       }
     }
   }

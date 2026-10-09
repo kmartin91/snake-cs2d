@@ -1,66 +1,38 @@
-import { CONFIG, SHOP, TICK_MS, ZONE } from '../shared/config.js';
-import { parseMap } from '../shared/map.js';
+import { CONFIG, WEAPONS } from '../shared/config.js';
 import { badgeHtml, dailiesHtml, rankName, xpToNext } from './progress.js';
 
 const $ = (id) => document.getElementById(id);
 
 const HOW = {
-  headshot: '🎯',
-  cut: '✂️',
-  body: '🐍',
-  headon: '💥',
-  wall: '🧱',
-  self: '🌀',
-  he: '🧨',
-  bomb: '☢️'
-};
-
-const HOW_TEXT = {
-  headshot: 'headshot',
-  cut: 'découpé',
-  body: 's\'est encastré',
-  headon: 'tête contre tête',
-  wall: 'dans le mur',
-  self: 's\'est mordu',
-  he: 'grenade HE',
-  bomb: 'explosion'
-};
-
-const REASONS = {
-  elim: (w) => `Tous les ${w === 'T' ? 'CT' : 'T'} sont morts`,
-  time: () => 'Temps écoulé',
-  bomb: () => 'La bombe a explosé',
-  defuse: () => 'Bombe désamorcée'
+  pistol: '🔫',
+  smg: '🔫',
+  rifle: '🔫',
+  shotgun: '💥',
+  sniper: '🎯',
+  golden: '👑',
+  he: '🧨'
 };
 
 const ITEMS = [
-  ['ar', '🛡 Kevlar'],
   ['he', 'HE'],
   ['fl', 'FLASH'],
-  ['sm', 'SMOKE'],
-  ['kit', 'KIT'],
-  ['hb', '💣 C4']
+  ['sm', 'SMOKE']
 ];
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const fmt = (ticks, tickMs = TICK_MS) => {
-  const s = Math.max(0, Math.ceil((ticks * tickMs) / 1000 - 0.05));
+const fmt = (seconds) => {
+  const s = Math.max(0, Math.ceil(seconds - 0.05));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 
 export class Hud {
-  constructor({ onBuy }) {
-    this.map = parseMap();
-    this.onBuy = onBuy;
+  constructor() {
     this.progress = null;
     this.onReplay = null;
     this.onMenu = null;
     this.el = {
-      hud: $('hud'),
       scoreT: $('scoreT'),
       scoreCT: $('scoreCT'),
-      dotsT: $('dotsT'),
-      dotsCT: $('dotsCT'),
       timer: $('timer'),
       phase: $('phase'),
       roomTag: $('roomTag'),
@@ -69,13 +41,12 @@ export class Hud {
       hint: $('hint'),
       deathCard: $('deathCard'),
       chatLog: $('chatLog'),
-      len: $('len'),
-      staminaBar: $('staminaBar'),
-      money: $('money'),
+      hp: $('hp'),
+      hpBar: $('hpBar'),
+      squad: $('squad'),
+      weaponName: $('weaponName'),
+      ammo: $('ammo'),
       items: $('items'),
-      buyMenu: $('buyMenu'),
-      buyList: $('buyList'),
-      buyMoney: $('buyMoney'),
       scoreboard: $('scoreboard'),
       matchOver: $('matchOver'),
       flash: $('flash')
@@ -85,7 +56,7 @@ export class Hud {
     this.snap = null;
     this.selfId = null;
     this.online = false;
-    this.buildItems();
+    this.el.items.innerHTML = ITEMS.map(([k, label]) => `<span data-k="${k}">${label}</span>`).join('');
   }
 
   reset() {
@@ -94,12 +65,7 @@ export class Hud {
     this.el.announce.innerHTML = '';
     this.el.matchOver.classList.add('hidden');
     this.el.scoreboard.classList.add('hidden');
-    this.el.buyMenu.classList.add('hidden');
     this.lastKiller = null;
-  }
-
-  buildItems() {
-    this.el.items.innerHTML = ITEMS.map(([k, label]) => `<span data-k="${k}">${label}</span>`).join('');
   }
 
   setRoom(info) {
@@ -143,66 +109,34 @@ export class Hud {
 
     el.scoreT.textContent = snap.sc[0];
     el.scoreCT.textContent = snap.sc[1];
-    for (const team of ['T', 'CT']) {
-      const dots = snap.p
-        .filter((p) => p.tm === team)
-        .map((p) => `<i class="${p.a ? '' : 'dead'}" title="${esc(p.n)}"></i>`)
-        .join('');
-      const target = team === 'T' ? el.dotsT : el.dotsCT;
-      if (target.innerHTML !== dots) target.innerHTML = dots;
-    }
-
-    const b = snap.bomb;
-    el.timer.classList.toggle('planted', snap.ph === 'planted');
-    el.timer.classList.toggle('low', snap.ph === 'live' && snap.tm * snap.tk < 10000);
-    let phase = '';
-    switch (snap.ph) {
-      case 'freeze':
-        el.timer.textContent = fmt(snap.tm, snap.tk);
-        phase = `Round ${snap.rd} · freeze · B pour acheter`;
-        break;
-      case 'live':
-        el.timer.textContent = fmt(snap.tm, snap.tk);
-        phase = `Round ${snap.rd} · premier à ${snap.wr}`;
-        break;
-      case 'planted':
-        el.timer.textContent = `💣 ${fmt(b.t, snap.tk)}`;
-        phase = `Bombe posée sur ${b.site || '?'}`;
-        break;
-      case 'over':
-        el.timer.textContent = '—';
-        phase = 'Fin du round';
-        break;
-      case 'warmup':
-        el.timer.textContent = 'WARMUP';
-        phase = 'En attente d\'adversaires…';
-        break;
-      case 'matchover':
-        el.timer.textContent = 'GG';
-        phase = 'Fin du match';
-        break;
-      default:
-        el.timer.textContent = '—';
-    }
-    el.phase.textContent = phase;
+    const phases = {
+      countdown: ['Départ dans', true],
+      live: [`Premier à ${snap.goal} kills`, true],
+      warmup: ['En attente d\'adversaires…', false],
+      matchover: ['Fin du match', false]
+    };
+    const [label, showTime] = phases[snap.ph] || ['—', false];
+    el.timer.textContent = showTime ? fmt(snap.tm) : snap.ph === 'matchover' ? 'GG' : 'WARMUP';
+    el.timer.classList.toggle('low', snap.ph === 'live' && snap.tm < 30);
+    el.phase.textContent = label;
 
     if (self) {
-      const len = self.a ? self.s.length / 2 : 0;
-      el.len.textContent = len + (self.gb > 0 ? `+${self.gb}` : '');
-      el.len.parentElement.classList.toggle('low', self.a && len < CONFIG.minFireLength + 1);
-      el.staminaBar.style.width = `${self.st}%`;
-      el.staminaBar.parentElement.classList.toggle('locked', self.st < CONFIG.boostRestart && !self.bo);
-      el.money.textContent = `$${self.$}`;
+      const w = WEAPONS[self.w] || WEAPONS.pistol;
+      el.hp.textContent = self.a ? self.hp : 0;
+      el.hpBar.style.width = `${self.a ? Math.max(0, Math.min(100, (100 * self.hp) / CONFIG.leaderHp)) : 0}%`;
+      el.hpBar.parentElement.parentElement.classList.toggle('low', self.a && self.hp <= 35);
+      el.squad.textContent = self.a ? self.s.length / 2 : 0;
+      el.weaponName.textContent = w.name;
+      el.weaponName.style.color = w.color;
+      el.ammo.textContent = self.rl > 0 ? 'RECH…' : `${self.mg}/${w.mag}`;
+      el.ammo.parentElement.classList.toggle('reloading', self.rl > 0);
+      el.ammo.parentElement.classList.toggle('low', self.rl === 0 && self.mg <= Math.ceil(w.mag * 0.2));
       for (const span of el.items.children) span.classList.toggle('on', Boolean(self[span.dataset.k]));
-      el.flash.style.opacity = self.fx > 0 ? Math.min(1, (self.fx * snap.tk) / 1600).toFixed(2) : '0';
+      el.flash.style.opacity = self.fx > 0 ? Math.min(1, self.fx / 1.6).toFixed(2) : '0';
     }
 
     this.updateHint(snap, self);
     this.updateDeathCard(snap, self);
-    if (!el.buyMenu.classList.contains('hidden')) {
-      if (snap.ph !== 'freeze' && snap.ph !== 'warmup') this.toggleBuy(false);
-      else this.renderBuy();
-    }
     if (!el.scoreboard.classList.contains('hidden')) this.renderScoreboard(el.scoreboard);
     if (snap.ph === 'matchover') {
       if (el.matchOver.classList.contains('hidden')) this.showMatchOver();
@@ -216,32 +150,20 @@ export class Hud {
     let text = '';
     let alert = false;
     if (self && self.a) {
-      const hx = self.s[0];
-      const hy = self.s[1];
-      const zone = this.map.zone[hy * this.map.width + hx];
-      const onSite = zone === ZONE.A || zone === ZONE.B;
-      const b = snap.bomb;
-      const len = self.s.length / 2;
-      if (snap.ph === 'freeze') {
-        text = 'Choisis ta direction · B : acheter';
-      } else if (self.tm === 'T' && self.hb) {
-        if (self.ac === 'plant') text = 'Pose en cours… ne lâche pas E';
-        else if (onSite && snap.ph === 'live') {
-          text = 'Maintiens E pour poser la bombe';
-          alert = true;
-        } else text = 'Tu as la bombe : direction A ou B';
-      } else if (self.tm === 'CT' && b.s === 'planted' && snap.ph === 'planted') {
-        const near = Math.max(Math.abs(hx - b.x), Math.abs(hy - b.y)) <= 1;
-        if (self.ac === 'defuse') text = `Désamorçage… ${self.kit ? '(kit)' : 'sans kit, c\'est long !'}`;
-        else if (near) text = 'Maintiens E pour désamorcer';
-        else text = `Bombe sur ${b.site} — fonce désamorcer !`;
+      const squad = self.s.length / 2;
+      if (snap.ph === 'countdown') text = 'Ramasse des recrues ➕ pour allonger ton escouade';
+      else if (self.im) {
+        text = 'Choisis une direction pour démarrer — ensuite ton serpent avance toujours';
         alert = true;
-      } else if (self.tm === 'T' && b.s === 'ground') {
-        text = 'La bombe est au sol — récupère-la !';
-        alert = true;
-      } else if (len < CONFIG.minFireLength) {
-        text = 'Plus de munitions — mange des caisses !';
       }
+      else if (snap.lt.some((l) => l[1] === 'golden') && self.w !== 'golden') {
+        text = '👑 Deagle d\'or au centre de la carte !';
+        alert = true;
+      } else if (self.hp <= 35) {
+        text = 'Leader blessé — trouve un soin ➕ ou recule derrière ton escouade';
+        alert = true;
+      } else if (self.rl > 0) text = 'Rechargement…';
+      else if (squad <= 2) text = 'Escouade réduite — va chercher des recrues';
     }
     if (el.textContent !== text) el.textContent = text;
     el.classList.toggle('alert', alert);
@@ -249,18 +171,18 @@ export class Hud {
 
   updateDeathCard(snap, self) {
     const el = this.el.deathCard;
-    const show = self && !self.a && (snap.ph === 'live' || snap.ph === 'planted' || snap.ph === 'warmup');
+    const show = self && !self.a && (snap.ph === 'live' || snap.ph === 'warmup');
     if (!show) {
       el.classList.add('hidden');
       return;
     }
     el.classList.remove('hidden');
-    let html = '<b>MORT</b>';
+    let html = '<b>ESCOUADE DÉCIMÉE</b>';
     if (this.lastKiller) {
       const k = this.player(this.lastKiller.killer);
-      html += k ? `Tué par ${this.nameTag(k)} (${HOW_TEXT[this.lastKiller.how] || this.lastKiller.how})<br>` : `${HOW_TEXT[this.lastKiller.how] || ''}<br>`;
+      if (k) html += `Tué par ${this.nameTag(k)} (${esc((WEAPONS[this.lastKiller.how] || {}).name || 'grenade')})<br>`;
     }
-    html += snap.ph === 'warmup' ? `Respawn dans ${Math.max(0, Math.ceil((self.rs * snap.tk) / 1000))}s` : 'Tu observes jusqu\'au prochain round';
+    html += `Réapparition dans ${Math.max(0, self.rs).toFixed(1)} s`;
     el.innerHTML = html;
   }
 
@@ -272,8 +194,9 @@ export class Hud {
     if (ev.killer === this.selfId || ev.victim === this.selfId) li.classList.add('mine');
     const icon = HOW[ev.how] || '☠️';
     const streak = ev.streak >= 2 ? ` <b>x${ev.streak}</b>` : '';
+    const squad = ev.squad ? ` <small>+${ev.squad} 🐍</small>` : '';
     li.innerHTML = killer
-      ? `${this.nameTag(killer)}<span class="how">${icon}</span>${this.nameTag(victim)}${streak}`
+      ? `${this.nameTag(killer)}<span class="how">${icon}</span>${this.nameTag(victim)}${squad}${streak}`
       : `<span class="how">${icon}</span>${this.nameTag(victim)}`;
     this.el.killfeed.prepend(li);
     while (this.el.killfeed.children.length > 6) this.el.killfeed.lastChild.remove();
@@ -282,7 +205,6 @@ export class Hud {
 
   chat(ev) {
     const li = document.createElement('li');
-    const p = this.player(ev.id);
     li.innerHTML = `<span class="${ev.team}">${esc(ev.name)}</span> : ${esc(ev.text)}`;
     this.pushChat(li);
   }
@@ -308,52 +230,13 @@ export class Hud {
     }, ms);
   }
 
-  roundEnd(ev) {
-    const color = ev.winner === 'T' ? 'var(--t)' : 'var(--ct)';
-    const mvp = this.player(ev.mvp);
-    const reason = (REASONS[ev.reason] || (() => ''))(ev.winner);
-    this.announce(
-      ev.winner === 'T' ? 'LES TERRORISTES GAGNENT' : 'LES ANTI-TERRORISTES GAGNENT',
-      `${reason}${mvp ? ` · MVP : ${mvp.n}` : ''}`,
-      color,
-      4200
-    );
-  }
-
-  isBuyOpen() {
-    return !this.el.buyMenu.classList.contains('hidden');
-  }
-
-  toggleBuy(force) {
-    const open = force ?? !this.isBuyOpen();
-    if (open && this.snap && this.snap.ph !== 'freeze' && this.snap.ph !== 'warmup') return false;
-    this.el.buyMenu.classList.toggle('hidden', !open);
-    if (open) this.renderBuy();
-    return open;
-  }
-
-  renderBuy() {
-    const self = this.player(this.selfId);
-    if (!self) return;
-    const free = this.snap.ph === 'warmup';
-    this.el.buyMoney.textContent = free ? 'GRATUIT' : `$${self.$}`;
-    const owned = { armor: self.ar, he: self.he, flash: self.fl, smoke: self.sm, kit: self.kit, ext: 0 };
-    const html = SHOP.map((item, i) => {
-      const wrongTeam = item.team && item.team !== self.tm;
-      const disabled = wrongTeam || owned[item.id] || (!free && self.$ < item.price) || !self.a;
-      return `<button class="buy-item" data-item="${item.id}" ${disabled ? 'disabled' : ''}>
-        <kbd>${i + 1}</kbd>
-        <span>${esc(item.label)}<small>${esc(item.desc)}${wrongTeam ? ' · CT uniquement' : ''}</small></span>
-        <span class="price">${owned[item.id] ? '✓' : `$${item.price}`}</span>
-      </button>`;
-    }).join('');
-    if (this.el.buyList.dataset.html !== html) {
-      this.el.buyList.innerHTML = html;
-      this.el.buyList.dataset.html = html;
-      for (const btn of this.el.buyList.querySelectorAll('button')) {
-        btn.addEventListener('click', () => this.onBuy(btn.dataset.item));
-      }
-    }
+  xpToast(amount, label) {
+    const feed = $('xpFeed');
+    const li = document.createElement('li');
+    li.textContent = `+${amount} XP · ${label}`;
+    feed.append(li);
+    while (feed.children.length > 4) feed.firstChild.remove();
+    setTimeout(() => li.remove(), 1900);
   }
 
   toggleScoreboard(show) {
@@ -370,13 +253,13 @@ export class Hud {
           .sort((a, b) => b.k - a.k || a.dt - b.dt)
           .map(
             (p) => `<tr class="${p.id === this.selfId ? 'me' : ''} ${p.a ? '' : 'dead'}">
-              <td>${esc(p.n)}${p.hb ? ' 💣' : ''}</td><td>${p.k}</td><td>${p.dt}</td><td>${'★'.repeat(Math.min(p.mvp, 5)) || '·'}</td>
-              <td>$${p.$}</td>${this.online ? `<td>${p.b ? 'BOT' : p.pg}</td>` : ''}</tr>`
+              <td>${esc(p.n)}</td><td>${p.k}</td><td>${p.dt}</td><td>${p.dn}</td><td>${p.a ? p.s.length / 2 : '—'}</td>
+              <td>${esc((WEAPONS[p.w] || WEAPONS.pistol).name)}</td>${this.online ? `<td>${p.b ? 'BOT' : p.pg}</td>` : ''}</tr>`
           )
           .join('');
         const score = team === 'T' ? snap.sc[0] : snap.sc[1];
         return `<div class="sb-team ${team}"><h3>${team === 'T' ? 'Terroristes' : 'Anti-terroristes'} — ${score}</h3>
-          <table><tr><th>Joueur</th><th>K</th><th>D</th><th>MVP</th><th>$</th>${this.online ? '<th>Ping</th>' : ''}</tr>${rows}</table></div>`;
+          <table><tr><th>Joueur</th><th>K</th><th>D</th><th>Soldats</th><th>🐍</th><th>Arme</th>${this.online ? '<th>Ping</th>' : ''}</tr>${rows}</table></div>`;
       })
       .join('');
   }
@@ -385,21 +268,11 @@ export class Hud {
     target.innerHTML = this.scoreboardHtml();
   }
 
-  xpToast(amount, label) {
-    const feed = document.getElementById('xpFeed');
-    const li = document.createElement('li');
-    li.textContent = `+${amount} XP · ${label}`;
-    feed.append(li);
-    while (feed.children.length > 4) feed.firstChild.remove();
-    setTimeout(() => li.remove(), 1900);
-  }
-
   showMatchOver() {
     const snap = this.snap;
     const el = this.el.matchOver;
-    const winner = snap.mw;
     const self = this.player(this.selfId);
-    const won = self && self.tm === winner;
+    const title = snap.mw === 'draw' ? 'ÉGALITÉ' : self && self.tm === snap.mw ? 'VICTOIRE !' : 'DÉFAITE';
     const p = this.progress;
     let summary = '';
     if (p) {
@@ -412,7 +285,7 @@ export class Hud {
         <ul class="dailies">${dailiesHtml(p.dailies())}</ul>
       </div>`;
     }
-    el.innerHTML = `<h2>${won ? 'VICTOIRE !' : 'DÉFAITE'}</h2>
+    el.innerHTML = `<h2>${title}</h2>
       <div class="final-score"><span class="T">${snap.sc[0]}</span> — <span class="CT">${snap.sc[1]}</span></div>
       ${summary}
       ${this.scoreboardHtml()}
@@ -421,7 +294,7 @@ export class Hud {
         <button class="btn" id="endMenuBtn">Menu</button>
       </div>`;
     el.classList.remove('hidden');
-    document.getElementById('replayBtn')?.addEventListener('click', () => this.onReplay?.());
-    document.getElementById('endMenuBtn').addEventListener('click', () => this.onMenu?.());
+    $('replayBtn')?.addEventListener('click', () => this.onReplay?.());
+    $('endMenuBtn').addEventListener('click', () => this.onMenu?.());
   }
 }

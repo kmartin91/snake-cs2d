@@ -1,357 +1,246 @@
-import { DIRS, CONFIG, SHOP, DIFFICULTY, ZONE, BOT_LINES } from './config.js';
-import { enemyOf, opposite, rand, pick, cheb, manh, dist, minBy } from './utils.js';
+import { CONFIG, DT, WEAPONS, DIFFICULTY } from './config.js';
+import { pick } from './utils.js';
+import { lineClear } from './physics.js';
 
-export function botChat(p, kind, chance) {
-  if (Math.random() > chance) return;
-  if (this.tickCount - this.lastBotChat < 30) return;
-  this.lastBotChat = this.tickCount;
-  this.emit('chat', { id: p.id, name: p.name, team: p.team, text: pick(BOT_LINES[kind]) });
-}
+const DIRS4 = [
+  [0, -1],
+  [1, 0],
+  [0, 1],
+  [-1, 0]
+];
 
-export function botBuy(p) {
-  const r = Math.random;
-  const owned = { armor: p.armor, kit: p.kit, he: p.he > 0, flash: p.flash > 0, smoke: p.smoke > 0, ext: p.extBought };
-  const tryBuy = (id, chance, reserve = 0) => {
-    const item = SHOP.find((s) => s.id === id);
-    if (owned[id] || p.money - item.price < reserve || r() >= chance) return;
-    this.buy(p, id);
-  };
-  tryBuy('armor', 0.75, 0);
-  if (p.team === 'CT') tryBuy('kit', 0.5, 200);
-  tryBuy('he', 0.6, 0);
-  tryBuy('flash', 0.5, 0);
-  tryBuy('smoke', 0.3, 0);
-  tryBuy('ext', 0.4, 0);
-}
-
-export function markSelf(p) {
-  this.selfStamp += 1;
-  const w = this.map.width;
-  for (const c of p.snake) this.selfMark[c.y * w + c.x] = this.selfStamp;
-}
-
-export function blockedFor(p, i) {
-  if (this.map.wall[i]) return true;
-  if (this.selfMark[i] === this.selfStamp) return true;
-  const pi = this.occ[enemyOf(p.team)].p[i];
-  return pi >= 0 && this.occList[pi] && this.occList[pi].alive;
-}
-
-export function bfs(p, goal) {
-  const { width, height } = this.map;
+export function botPath(p, gx, gy) {
+  const { width, height, wall } = this.map;
+  const sx = Math.round(p.x);
+  const sy = Math.round(p.y);
+  const goal = gy * width + gx;
+  const start = sy * width + sx;
+  if (goal === start) return [];
   this.bfsStamp += 1;
   const stamp = this.bfsStamp;
   const seen = this.bfsSeen;
-  const first = this.bfsFirst;
-  const distA = this.bfsDist;
+  const prev = this.bfsPrev;
   const queue = this.bfsQueue;
-  const h = p.snake[0];
-  seen[h.y * width + h.x] = stamp;
-  let qt = 0;
-  for (let d = 0; d < 4; d += 1) {
-    if (d === opposite(p.dir)) continue;
-    const nx = h.x + DIRS[d].x;
-    const ny = h.y + DIRS[d].y;
-    if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-    const i = ny * width + nx;
-    if (this.blockedFor(p, i)) continue;
-    seen[i] = stamp;
-    first[i] = d;
-    distA[i] = 1;
-    if (goal(nx, ny)) return { dir: d, dist: 1 };
-    queue[qt++] = i;
-  }
+  seen[start] = stamp;
   let qh = 0;
+  let qt = 0;
+  queue[qt++] = start;
   while (qh < qt) {
     const i = queue[qh++];
+    if (i === goal) break;
     const x = i % width;
     const y = (i - x) / width;
-    for (let d = 0; d < 4; d += 1) {
-      const nx = x + DIRS[d].x;
-      const ny = y + DIRS[d].y;
+    for (const [dx, dy] of DIRS4) {
+      const nx = x + dx;
+      const ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
       const n = ny * width + nx;
-      if (seen[n] === stamp || this.blockedFor(p, n)) continue;
+      if (seen[n] === stamp || wall[n]) continue;
       seen[n] = stamp;
-      first[n] = first[i];
-      distA[n] = distA[i] + 1;
-      if (goal(nx, ny)) return { dir: first[n], dist: distA[n] };
+      prev[n] = i;
       queue[qt++] = n;
     }
   }
-  return null;
+  if (seen[goal] !== stamp) return [];
+  const path = [];
+  for (let i = goal; i !== start; i = prev[i]) path.push({ x: i % width, y: Math.floor(i / width) });
+  return path.reverse();
 }
 
-export function flood(p, sx, sy, limit) {
-  const { width, height } = this.map;
-  this.bfsStamp += 1;
-  const stamp = this.bfsStamp;
-  const seen = this.bfsSeen;
-  const queue = this.bfsQueue;
-  const start = sy * width + sx;
-  seen[start] = stamp;
-  const h = p.snake[0];
-  seen[h.y * width + h.x] = stamp;
-  queue[0] = start;
-  let qh = 0;
-  let qt = 1;
-  while (qh < qt && qt < limit) {
-    const i = queue[qh++];
-    const x = i % width;
-    const y = (i - x) / width;
-    for (let d = 0; d < 4; d += 1) {
-      const nx = x + DIRS[d].x;
-      const ny = y + DIRS[d].y;
-      if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-      const n = ny * width + nx;
-      if (seen[n] === stamp || this.blockedFor(p, n)) continue;
-      seen[n] = stamp;
-      queue[qt++] = n;
+export function botClear(ax, ay, bx, by) {
+  return lineClear(this.map, ax, ay, bx, by, (i, j) => this.inSmoke(i, j));
+}
+
+export function botTarget(p, alive) {
+  const ai = p.ai;
+  const D = ai.diff || DIFFICULTY[this.opts.difficulty];
+  ai.focusT = (ai.focusT || 0) - DT;
+  if (ai.focusT <= 0) {
+    ai.focusLeader = Math.random() < D.focus;
+    ai.focusT = 1.5 + Math.random();
+  }
+  const range = WEAPONS[p.weapon].range + 1;
+  let lead = null;
+  let body = null;
+  for (const o of alive) {
+    if (!o.alive || o.team === p.team || o.shield > 0 || !this.canSee(p.team, o)) continue;
+    const dl = Math.hypot(o.x - p.x, o.y - p.y);
+    if (dl <= range && (!lead || dl < lead.d) && this.botClear(p.x, p.y, o.x, o.y)) {
+      lead = { o, x: o.x, y: o.y, d: dl, lead: true };
+    }
+    for (const f of o.followers) {
+      const d = Math.hypot(f.x - p.x, f.y - p.y);
+      if (d > range || (body && d >= body.d) || !this.botClear(p.x, p.y, f.x, f.y)) continue;
+      body = { o, x: f.x, y: f.y, d, lead: false };
     }
   }
-  return qt;
+  if (ai.focusLeader) return lead || body;
+  return body || lead;
 }
 
-export function scanLine(p, d, range) {
-  const h = p.snake[0];
-  const D = DIRS[d];
-  let x = h.x;
-  let y = h.y;
-  for (let i = 1; i <= range; i += 1) {
-    x += D.x;
-    y += D.y;
-    if (this.isWall(x, y) || this.inSmoke(x, y)) return null;
-    const hit = this.occAt(x, y, enemyOf(p.team));
-    if (hit) return { p: hit.p, seg: hit.seg, dist: i };
+const spot = (it, kind) => ({ x: Math.round(it.x), y: Math.round(it.y), px: it.x, py: it.y, kind });
+
+function nearest(list, p, maxD) {
+  let best = null;
+  let bestD = maxD;
+  for (const it of list) {
+    const d = Math.abs(it.x - p.x) + Math.abs(it.y - p.y);
+    if (d < bestD) {
+      bestD = d;
+      best = it;
+    }
   }
-  return null;
+  return best;
+}
+
+export function botGoal(p, alive) {
+  const ai = p.ai;
+  const D = ai.diff || DIFFICULTY[this.opts.difficulty];
+  if (p.hp < 60) {
+    const med = nearest(this.loot.filter((l) => l.kind === 'medkit'), p, 22);
+    if (med) return spot(med, 'loot');
+  }
+  const golden = this.loot.find((l) => l.kind === 'golden');
+  if (golden) {
+    if (ai.wantsGold === undefined) ai.wantsGold = Math.random() < D.aggro;
+    if (ai.wantsGold) return spot(golden, 'loot');
+  } else {
+    ai.wantsGold = undefined;
+  }
+  if (p.weapon === 'pistol') {
+    const gun = nearest(this.loot.filter((l) => l.kind === 'weapon'), p, 20);
+    if (gun) return spot(gun, 'loot');
+  }
+  if (p.followers.length < CONFIG.maxFollowers - 2) {
+    const rec = nearest(this.loot.filter((l) => l.kind === 'recruit' || l.kind === 'tag'), p, p.followers.length < 5 ? 16 : 9);
+    if (rec) return spot(rec, 'loot');
+  }
+  const nade = nearest(this.loot.filter((l) => (l.kind === 'he' || l.kind === 'flash') && p[l.kind] < 1), p, 8);
+  if (nade) return spot(nade, 'loot');
+  const known = alive.filter((o) => o.alive && o.team !== p.team && (this.canSee(p.team, o) || this.heardBy(p.team, o)));
+  const prey = nearest(known, p, 30);
+  if (prey && Math.random() < 0.4 + D.aggro * 0.6) return { x: Math.round(prey.x), y: Math.round(prey.y), kind: 'hunt' };
+  ai.roamT -= 0.4;
+  if (!ai.roam || ai.roamT <= 0 || Math.hypot(ai.roam.x - p.x, ai.roam.y - p.y) < 2) {
+    const s = pick([this.map.siteCenter.A, this.map.siteCenter.B, this.center, pick(this.lootCells), pick(this.lootCells)]);
+    let x = Math.round(s.x);
+    let y = Math.round(s.y);
+    if (this.isWall(x, y)) ({ x, y } = pick(this.lootCells));
+    ai.roam = { x, y, kind: 'roam' };
+    ai.roamT = 6 + Math.random() * 6;
+  }
+  return ai.roam;
 }
 
 export function botThink(p, alive) {
   const ai = p.ai;
-  const base = DIFFICULTY[this.opts.difficulty];
-  const D =
-    p.team === 'T' && this.bomb.state === 'planted'
-      ? { ...base, reaction: Math.max(1, base.reaction - 2), fire: Math.min(0.95, base.fire + 0.3), aim: Math.max(0.6, base.aim) }
-      : base;
-  const h = p.snake[0];
-  p.wantFire = false;
-  p.queue.length = 0;
-  this.markSelf(p);
+  const D = ai.diff || DIFFICULTY[this.opts.difficulty];
+  const w = WEAPONS[p.weapon];
+  const target = p.flashed > 0 ? null : this.botTarget(p, alive);
+
+  if (target) {
+    ai.seen += DT;
+    let tx = target.x;
+    let ty = target.y;
+    if (target.lead && target.o.moving && D.lead > 0) {
+      const t = target.d / w.speed;
+      tx += Math.cos(target.o.angle) * CONFIG.speed * t * D.lead;
+      ty += Math.sin(target.o.angle) * CONFIG.speed * t * D.lead;
+    }
+    p.aim = Math.atan2(ty - p.y, tx - p.x) + (Math.random() * 2 - 1) * D.spread;
+    p.aimDist = target.d;
+    ai.burst = (ai.burst || 0) + DT;
+    p.fireHeld = ai.seen >= D.reaction && target.d <= w.range + 0.5 && ai.burst % 1.2 < 1.2 * D.fire;
+    if (ai.seen > D.reaction && target.d > 3 && target.d < 8.5 && Math.random() < 0.015 * (1 + D.aggro)) {
+      if (p.he) p.wantThrow = 'he';
+      else if (p.flash) p.wantThrow = 'flash';
+    }
+  } else {
+    ai.seen = Math.max(0, ai.seen - DT * 2);
+    p.fireHeld = false;
+    if (p.moving) p.aim = p.angle;
+    if (p.reload <= 0 && p.ammo < w.mag * 0.6) this.startReload(p);
+  }
+
+  ai.think -= DT;
+  if (ai.think <= 0) {
+    ai.think = 0.4;
+    if (target && target.d <= w.range * 0.9) {
+      ai.goal = null;
+    } else {
+      const goal = target ? { x: Math.round(target.x), y: Math.round(target.y), kind: 'hunt' } : this.botGoal(p, alive);
+      ai.repath = (ai.repath || 0) - 0.4;
+      if (!ai.goal || goal.x !== ai.goal.x || goal.y !== ai.goal.y || !ai.path.length || ai.repath <= 0) {
+        ai.goal = goal;
+        ai.path = this.botPath(p, goal.x, goal.y);
+        ai.repath = 2;
+      }
+    }
+    const moved = ai.lastPos ? Math.hypot(ai.lastPos.x - p.x, ai.lastPos.y - p.y) : 1;
+    ai.stuckT = moved < 0.15 && (p.mvx || p.mvy) ? ai.stuckT + 0.4 : 0;
+    ai.lastPos = { x: p.x, y: p.y };
+    if (ai.stuckT >= 1.2) {
+      ai.unstick = 0.6;
+      ai.unstickDir = Math.random() * Math.PI * 2;
+      ai.stuckT = 0;
+      ai.path = [];
+    }
+  }
+
+  if (ai.unstick > 0) {
+    ai.unstick -= DT;
+    p.mvx = Math.cos(ai.unstickDir);
+    p.mvy = Math.sin(ai.unstickDir);
+    return;
+  }
 
   if (p.flashed > 0) {
-    p.actionHeld = false;
-    p.boostHeld = false;
-    const want = Math.random() < 0.15 ? (p.dir + (Math.random() < 0.5 ? 1 : 3)) % 4 : p.dir;
-    if (Math.random() < 0.5) this.botSteer(p, want);
-    else p.queue.push(want);
+    p.mvx = Math.cos(p.angle);
+    p.mvy = Math.sin(p.angle);
     return;
   }
 
-  const threat = this.scanLine(p, p.dir, 16);
-  if (threat) {
-    ai.seen += 1;
-    if (ai.seen >= D.reaction && p.fireCd === 0) {
-      const len = p.snake.length;
-      const worth = threat.seg === 0 || threat.dist <= 7 || len > 6;
-      if (worth && len >= CONFIG.minFireLength && Math.random() < D.fire) p.wantFire = true;
-      if (Math.random() < D.nade && threat.dist >= 3 && threat.dist <= 9) {
-        if (p.he) p.wantThrow = 'he';
-        else if (p.flash && threat.dist <= 7) p.wantThrow = 'flash';
-      }
+  if (target && target.d <= w.range * 0.9) {
+    ai.strafeT -= DT;
+    if (ai.strafeT <= 0) {
+      ai.strafe = Math.random() < 0.5 ? -1 : 1;
+      ai.strafeT = 0.8 + Math.random() * 1.4;
     }
-  } else {
-    ai.seen = 0;
-  }
-
-  const canPlant = this.phase === 'live' && p.hasBomb && this.siteAt(h.x, h.y);
-  const canDefuse =
-    this.phase === 'planted' && p.team === 'CT' && this.bomb.state === 'planted' && cheb(h, this.bomb) <= 1;
-  if (canPlant || canDefuse) {
-    p.actionHeld = true;
-    p.boostHeld = false;
-    return;
-  }
-  p.actionHeld = false;
-
-  if (Math.random() < D.mistake) {
-    p.boostHeld = false;
+    const dx = (target.x - p.x) / target.d;
+    const dy = (target.y - p.y) / target.d;
+    const want = p.weapon === 'shotgun' ? 2.5 : w.range * 0.55;
+    const push = target.d > want + 1.5 ? 0.6 : target.d < want - 1.5 ? -0.6 : 0;
+    p.mvx = -dy * ai.strafe + dx * push;
+    p.mvy = dx * ai.strafe + dy * push;
     return;
   }
 
-  ai.retarget -= 1;
-  if (!ai.goal || ai.retarget <= 0 || cheb(h, ai.goal) <= ai.goal.r) {
-    if (ai.goal && ai.goal.kind === 'wp' && cheb(h, ai.goal) <= ai.goal.r) ai.waypoint = null;
-    ai.goal = this.chooseGoal(p, alive);
-    ai.retarget = ai.goal.kind === 'enemy' ? 3 : 8 + rand(6);
-  }
-
-  let want = null;
-  const hunting = p.team === 'T' && this.bomb.state === 'planted' && this.bomb.defuser;
-  if (!threat && Math.random() < (hunting ? Math.max(0.6, D.aim) : D.aim)) {
-    for (const d of [(p.dir + 1) % 4, (p.dir + 3) % 4]) {
-      const t = this.scanLine(p, d, 12);
-      if (t && (t.seg === 0 || t.dist <= 8)) {
-        want = d;
-        break;
-      }
+  const path = ai.path;
+  while (path.length) {
+    const a = path[0];
+    if (Math.hypot(a.x - p.x, a.y - p.y) < 0.5) {
+      path.shift();
+      continue;
     }
+    if (path.length > 1 && Math.hypot(path[1].x - p.x, path[1].y - p.y) < 1) {
+      path.shift();
+      continue;
+    }
+    break;
   }
-
-  if (want === null) {
+  if (!path.length) {
     const g = ai.goal;
-    let res = null;
-    if (g.kind === 'site') {
-      const zone = g.site === 'A' ? ZONE.A : ZONE.B;
-      const reachSite = p.hasBomb;
-      res = this.bfs(p, (x, y) =>
-        reachSite ? this.map.zone[y * this.map.width + x] === zone : Math.max(Math.abs(x - g.x), Math.abs(y - g.y)) <= g.r
-      );
-    } else {
-      res = this.bfs(p, (x, y) => Math.max(Math.abs(x - g.x), Math.abs(y - g.y)) <= g.r);
-    }
-    if (res) {
-      want = res.dir;
-      ai.pathLen = res.dist;
-    } else {
-      ai.pathLen = 0;
-    }
+    const gx = g ? g.px ?? g.x : p.x;
+    const gy = g ? g.py ?? g.y : p.y;
+    const d = Math.hypot(gx - p.x, gy - p.y);
+    p.mvx = d > 0.25 ? (gx - p.x) / d : 0;
+    p.mvy = d > 0.25 ? (gy - p.y) / d : 0;
+    return;
   }
-  if (want === null) want = p.dir;
-
-  const chosen = this.botSteer(p, want);
-
-  const urgent =
-    (p.hasBomb && ai.pathLen > 4) ||
-    (p.team === 'CT' && this.bomb.state === 'planted' && ai.pathLen > 3) ||
-    (ai.goal && ai.goal.kind === 'enemy') ||
-    ai.pathLen > 16;
-  let boost = urgent && Math.random() < D.boost + 0.3;
-  if (boost && chosen !== null) {
-    const D1 = DIRS[chosen];
-    const x2 = h.x + D1.x * 2;
-    const y2 = h.y + D1.y * 2;
-    const x3 = h.x + D1.x * 3;
-    const y3 = h.y + D1.y * 3;
-    const w = this.map.width;
-    if (this.isWall(x2, y2) || this.blockedFor(p, y2 * w + x2)) boost = false;
-    else if (this.isWall(x3, y3) || this.blockedFor(p, y3 * w + x3)) boost = false;
-  }
-  p.boostHeld = boost;
-}
-
-export function botSteer(p, want) {
-  const h = p.snake[0];
-  const { width } = this.map;
-  const need = Math.min(p.snake.length + 4, 45);
-  const candidates = [want, (want + 1) % 4, (want + 3) % 4, (want + 2) % 4].filter(
-    (d, i, arr) => d !== opposite(p.dir) && arr.indexOf(d) === i
-  );
-  let best = null;
-  let bestScore = -Infinity;
-  for (const d of candidates) {
-    const nx = h.x + DIRS[d].x;
-    const ny = h.y + DIRS[d].y;
-    if (this.isWall(nx, ny) || this.blockedFor(p, ny * width + nx)) continue;
-    const area = this.flood(p, nx, ny, need);
-    let score = area >= need ? 1000 : area * 10;
-    if (d === want) score += 60;
-    if (d === p.dir) score += 5;
-    for (const o of this.occList) {
-      if (!o.alive || o.team === p.team) continue;
-      const oh = o.snake[0];
-      if (Math.abs(oh.x - nx) + Math.abs(oh.y - ny) === 1 && o.snake.length >= p.snake.length) score -= 40;
-    }
-    if (score > bestScore) {
-      bestScore = score;
-      best = d;
-    }
-  }
-  if (best !== null) p.queue.push(best);
-  return best;
-}
-
-export function pointNear(c, r) {
-  for (let i = 0; i < 20; i += 1) {
-    const x = Math.round(c.x + (Math.random() * 2 - 1) * r);
-    const y = Math.round(c.y + (Math.random() * 2 - 1) * r);
-    if (!this.isWall(x, y)) return { x, y, r: 1, kind: 'point' };
-  }
-  return { x: Math.round(c.x), y: Math.round(c.y), r: 2, kind: 'point' };
-}
-
-export function aimGoal(p, target) {
-  const h = p.snake[0];
-  const t = target.snake[0];
-  let best = null;
-  let bestScore = Infinity;
-  for (const D of DIRS) {
-    for (let k = 1; k <= 8; k += 1) {
-      const x = t.x + D.x * k;
-      const y = t.y + D.y * k;
-      if (this.isWall(x, y) || this.inSmoke(x, y)) break;
-      if (k < 3) continue;
-      const score = Math.abs(x - h.x) + Math.abs(y - h.y) + Math.abs(k - 5);
-      if (score < bestScore) {
-        bestScore = score;
-        best = { x, y };
-      }
-    }
-  }
-  if (!best) return { x: t.x, y: t.y, r: 3, kind: 'enemy' };
-  return { x: best.x, y: best.y, r: 1, kind: 'enemy' };
-}
-
-export function siteGoal(site) {
-  const c = pick(this.map.sites[site]);
-  return { x: c.x, y: c.y, r: 1, kind: 'site', site };
-}
-
-export function chooseGoal(p, alive) {
-  const D = DIFFICULTY[this.opts.difficulty];
-  const ai = p.ai;
-  const b = this.bomb;
-  const h = p.snake[0];
-  const enemies = alive.filter((o) => o.alive && o.team !== p.team && this.canSee(p.team, o));
-  const mates = alive.filter((o) => o.alive && o.team === p.team);
-  const nearestEnemy = minBy(enemies, (o) => manh(o.snake[0], h));
-  const enemyDist = nearestEnemy ? manh(nearestEnemy.snake[0], h) : Infinity;
-
-  if (p.team === 'T') {
-    if (p.hasBomb) {
-      if (ai.waypoint && Math.random() < 0.5) return { ...ai.waypoint, r: 2, kind: 'wp' };
-      return this.siteGoal(this.plan);
-    }
-    if (b.state === 'ground') {
-      const closest = minBy(mates, (o) => manh(o.snake[0], b));
-      if (closest === p) return { x: b.x, y: b.y, r: 0, kind: 'bomb' };
-    }
-    if (b.state === 'planted') {
-      const defuser = b.defuser ? this.players.get(b.defuser) : null;
-      if (defuser && defuser.alive) return this.aimGoal(p, defuser);
-      const intruder = minBy(enemies, (o) => manh(o.snake[0], b));
-      if (intruder && manh(intruder.snake[0], b) < 12) return this.aimGoal(p, intruder);
-      return this.pointNear(b, 3);
-    }
-  } else {
-    if (b.state === 'planted') {
-      const closest = minBy(mates, (o) => manh(o.snake[0], b));
-      if (closest === p || manh(h, b) < 6) return { x: b.x, y: b.y, r: 1, kind: 'defuse' };
-      return this.pointNear(b, 4);
-    }
-    if (b.state === 'ground' && Math.random() < 0.4) return this.pointNear(b, 3);
-  }
-
-  if (nearestEnemy && enemyDist < 12 && Math.random() < D.chase) return this.aimGoal(p, nearestEnemy);
-
-  const crate = minBy(this.crates, (c) => manh(c, h));
-  if (crate && manh(crate, h) < 8) return { x: crate.x, y: crate.y, r: 0, kind: 'crate' };
-  const pellet = minBy(this.pellets, (c) => manh(c, h));
-  if (pellet && manh(pellet, h) < 5) return { x: pellet.x, y: pellet.y, r: 0, kind: 'crate' };
-
-  if (p.team === 'T') {
-    if (ai.waypoint) return { ...ai.waypoint, r: 2, kind: 'wp' };
-    return this.siteGoal(this.plan);
-  }
-  return this.siteGoal(ai.site || 'A');
+  const wp = path.length > 1 && this.botClear(p.x, p.y, path[1].x, path[1].y) ? path[1] : path[0];
+  const dx = wp.x - p.x;
+  const dy = wp.y - p.y;
+  const len = Math.hypot(dx, dy) || 1;
+  p.mvx = dx / len;
+  p.mvy = dy / len;
 }

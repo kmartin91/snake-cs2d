@@ -1,179 +1,120 @@
-import { DIRS, CONFIG, TICK_MS, timings, SHOP, DIFFICULTY, ZONE, SPAWNS, T_ROUTES, BOT_NAMES } from './config.js';
+import { CONFIG, DT, TICK_MS, WEAPONS, LOOT, LOOT_WEAPONS, DIFFICULTY, ZONE, BOT_NAMES, BOT_LINES } from './config.js';
 import { MAP_ROWS, parseMap } from './map.js';
 import { computeVision, FOG_PHASES } from './vision.js';
 import { SKINS, SKIN_IDS } from './skins.js';
-import { enemyOf, opposite, clamp, rand, pick, same, shuffle, flatten } from './utils.js';
+import { clamp, rand, pick } from './utils.js';
+import { circleHitsWall, pointAlong, trimTrail, lineClear } from './physics.js';
 import * as bots from './bots.js';
-import * as combat from './combat.js';
-import * as objectives from './objectives.js';
+
+const r1 = (v) => Math.round(v * 10) / 10;
+const r2 = (v) => Math.round(v * 100) / 100;
+export const WEAPON_KEYS = Object.keys(WEAPONS);
 
 function createPlayer(id, name, bot, team) {
   return {
     id,
-    skin: 'classic',
     name,
     bot,
     team,
+    skin: 'classic',
     alive: false,
-    snake: [],
-    dir: 0,
-    queue: [],
-    growBy: 0,
-    spawnSeq: 0,
-    moved: 0,
-    steps: 0,
-    stepping: false,
-    nh: null,
-    money: CONFIG.money.start,
-    kills: 0,
-    deaths: 0,
-    mvps: 0,
-    roundKills: 0,
-    streak: 0,
-    lastKillTick: -999,
-    armor: false,
+    x: 0,
+    y: 0,
+    angle: 0,
+    mvx: 0,
+    mvy: 0,
+    moving: false,
+    stuck: 0,
+    started: false,
+    heading: 0,
+    turning: false,
+    turnSign: 0,
+    aim: 0,
+    aimDist: 6,
+    fireHeld: false,
+    wantFire: false,
+    hp: CONFIG.leaderHp,
+    followers: [],
+    trail: [],
+    weapon: 'pistol',
+    ammo: WEAPONS.pistol.mag,
+    reload: 0,
+    cd: 0,
     he: 0,
     flash: 0,
     smoke: 0,
-    kit: false,
-    extBought: false,
-    stamina: CONFIG.staminaMax,
-    boostHeld: false,
-    boosting: false,
-    boostLocked: false,
-    actionHeld: false,
-    acting: null,
-    fireHeld: false,
-    wantFire: false,
     wantThrow: null,
-    fireCd: 0,
     flashed: 0,
+    shield: 0,
     respawn: 0,
-    survived: false,
-    hasBomb: false,
+    kills: 0,
+    deaths: 0,
+    downs: 0,
+    streak: 0,
+    lastKill: -999,
+    spawnSeq: 0,
     ping: 0,
+    noiseSeed: [...String(id)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % 6,
     joinedAt: Date.now(),
-    ai: bot ? { goal: null, retarget: 0, seen: 0, waypoint: null, site: 'A', pathLen: 0 } : null
-  };
-}
-
-function freshBomb() {
-  return {
-    state: 'none',
-    x: 0,
-    y: 0,
-    carrier: null,
-    timer: 0,
-    planter: null,
-    plantProgress: 0,
-    defuser: null,
-    defuseProgress: 0,
-    site: null
+    ai: bot
+      ? { think: 0, seen: 0, goal: null, path: [], strafe: 1, strafeT: 0, lastPos: null, stuckT: 0, unstick: 0, roam: null, roamT: 0 }
+      : null
   };
 }
 
 export class Game {
   constructor(opts = {}) {
-    const winRounds = clamp(Number(opts.winRounds) || CONFIG.winRounds, 2, 10);
     this.opts = {
       teamSize: clamp(Number(opts.teamSize) || 3, 1, 5),
       bots: opts.bots !== false,
       difficulty: DIFFICULTY[opts.difficulty] ? opts.difficulty : 'normal',
-      winRounds,
-      halftime: winRounds - 1
+      scoreToWin: clamp(Number(opts.scoreToWin) || CONFIG.scoreToWin, 5, 100)
     };
     this.tickMs = TICK_MS;
-    this.T = timings(this.tickMs);
     this.map = parseMap(MAP_ROWS);
     const n = this.map.width * this.map.height;
-    this.occ = {
-      T: { p: new Int16Array(n), s: new Int16Array(n) },
-      CT: { p: new Int16Array(n), s: new Int16Array(n) }
-    };
-    this.selfMark = new Int32Array(n);
+    this.spawnCells = { T: [], CT: [] };
+    this.lootCells = [];
+    for (const c of this.map.floor) {
+      const z = this.map.zone[c.y * this.map.width + c.x];
+      if (z === ZONE.T) this.spawnCells.T.push(c);
+      else if (z === ZONE.CT) this.spawnCells.CT.push(c);
+      else this.lootCells.push(c);
+    }
+    const cx = this.map.width / 2;
+    const cy = this.map.height / 2;
+    this.center = this.lootCells.reduce((best, c) =>
+      Math.hypot(c.x - cx, c.y - cy) < Math.hypot(best.x - cx, best.y - cy) ? c : best
+    );
     this.vision = { T: new Uint8Array(n), CT: new Uint8Array(n) };
     this.fogOn = false;
-    this.selfStamp = 0;
     this.bfsSeen = new Int32Array(n);
-    this.bfsFirst = new Int8Array(n);
-    this.bfsDist = new Int16Array(n);
+    this.bfsPrev = new Int32Array(n);
     this.bfsQueue = new Int32Array(n);
     this.bfsStamp = 0;
-    this.occList = [];
+    this.soldierGrid = new Map();
 
     this.players = new Map();
     this.tickCount = 0;
     this.phase = 'idle';
-    this.timer = 0;
-    this.round = 0;
+    this.time = 0;
     this.score = { T: 0, CT: 0 };
-    this.crates = [];
-    this.pellets = [];
+    this.loot = [];
     this.bullets = [];
+    this.newBullets = [];
     this.grenades = [];
     this.smokes = [];
-    this.bomb = freshBomb();
     this.events = [];
-    this.roundResult = null;
-    this.matchWinner = null;
-    this.swapPending = false;
-    this.halftimeDone = false;
+    this.winner = null;
     this.uid = 1;
-    this.plan = 'A';
     this.botSeq = 0;
+    this.lootTimer = 0;
+    this.goldenTimer = CONFIG.goldenEvery;
     this.lastBotChat = -999;
   }
 
   emit(type, data = {}) {
     this.events.push({ type, ...data });
-  }
-
-  isWall(x, y) {
-    const { width, height, wall } = this.map;
-    if (x < 0 || y < 0 || x >= width || y >= height) return true;
-    return wall[y * width + x] === 1;
-  }
-
-  zoneAt(x, y) {
-    if (this.isWall(x, y)) return ZONE.NONE;
-    return this.map.zone[y * this.map.width + x];
-  }
-
-  siteAt(x, y) {
-    const z = this.zoneAt(x, y);
-    if (z === ZONE.A) return 'A';
-    if (z === ZONE.B) return 'B';
-    return null;
-  }
-
-  inSmoke(x, y) {
-    for (const s of this.smokes) {
-      if (Math.hypot(s.x - x, s.y - y) <= s.r) return true;
-    }
-    return false;
-  }
-
-  lineOfSight(a, b) {
-    let x0 = a.x;
-    let y0 = a.y;
-    const dx = Math.abs(b.x - x0);
-    const dy = -Math.abs(b.y - y0);
-    const sx = x0 < b.x ? 1 : -1;
-    const sy = y0 < b.y ? 1 : -1;
-    let err = dx + dy;
-    for (;;) {
-      if (this.isWall(x0, y0)) return false;
-      if (x0 === b.x && y0 === b.y) return true;
-      const e2 = 2 * err;
-      if (e2 >= dy) {
-        err += dy;
-        x0 += sx;
-      }
-      if (e2 <= dx) {
-        err += dx;
-        y0 += sy;
-      }
-    }
   }
 
   teamMembers(team) {
@@ -196,63 +137,48 @@ export class Game {
     return n;
   }
 
-  cellOccupied(x, y) {
-    for (const p of this.players.values()) {
-      if (!p.alive) continue;
-      for (const s of p.snake) if (s.x === x && s.y === y) return true;
-    }
+  isWall(x, y) {
+    const { width, height, wall } = this.map;
+    if (x < 0 || y < 0 || x >= width || y >= height) return true;
+    return wall[y * width + x] === 1;
+  }
+
+  inSmoke(x, y) {
+    for (const s of this.smokes) if (Math.hypot(s.x - x, s.y - y) <= s.r) return true;
     return false;
   }
 
-  randomFreeCell(avoidSpawns = true) {
-    const { floor, zone, width } = this.map;
-    for (let i = 0; i < 300; i += 1) {
-      const c = pick(floor);
-      const z = zone[c.y * width + c.x];
-      if (avoidSpawns && (z === ZONE.T || z === ZONE.CT)) continue;
-      if (this.cellOccupied(c.x, c.y)) continue;
-      if (this.crates.some((k) => same(k, c))) continue;
-      if (this.bomb.state === 'ground' && same(this.bomb, c)) continue;
-      return { x: c.x, y: c.y };
-    }
-    return null;
+  soldiersOf(p) {
+    const out = [{ x: p.x, y: p.y, f: null }];
+    for (const f of p.followers) out.push({ x: f.x, y: f.y, f });
+    return out;
   }
 
   addPlayer({ id, name, bot = false, team = null, skin = 'classic' }) {
     if (this.players.has(id)) return this.players.get(id);
-
     let chosen = team === 'T' || team === 'CT' ? team : null;
     if (!chosen) {
       const humans = (t) => this.teamMembers(t).filter((p) => !p.bot).length;
       const hT = humans('T');
       const hC = humans('CT');
-      if (hT !== hC) {
-        chosen = hT < hC ? 'T' : 'CT';
-      } else {
+      if (hT !== hC) chosen = hT < hC ? 'T' : 'CT';
+      else {
         const aT = this.teamMembers('T').length;
         const aC = this.teamMembers('CT').length;
         chosen = aT < aC ? 'T' : aT > aC ? 'CT' : Math.random() < 0.5 ? 'T' : 'CT';
       }
     }
-
     const cleanName = String(name || 'Joueur').replace(/\s+/g, ' ').trim().slice(0, 16) || 'Joueur';
     const p = createPlayer(id, cleanName, bot, chosen);
     p.skin = SKIN_IDS.has(skin) ? skin : 'classic';
     this.players.set(id, p);
-
     if (!bot) {
       this.emit('join', { id, name: p.name, team: chosen });
       this.replaceBotFor(chosen);
     }
-
-    if (this.phase === 'idle') {
-      this.startMatch();
-    } else if (this.phase === 'freeze' || this.phase === 'warmup') {
-      this.spawnAnywhere(p);
-    } else {
-      p.alive = false;
-      p.respawn = 0;
-    }
+    if (this.phase === 'idle') this.startMatch();
+    else if (this.phase === 'countdown') this.spawn(p);
+    else p.respawn = 1;
     return p;
   }
 
@@ -260,47 +186,27 @@ export class Game {
     if (!this.opts.bots) return;
     const members = this.teamMembers(team);
     if (members.length <= this.opts.teamSize) return;
-    const bots = members.filter((p) => p.bot);
-    const victim =
-      bots.find((b) => !b.alive) ||
-      (this.phase === 'freeze' || this.phase === 'warmup' || this.phase === 'idle' ? bots[0] : null);
-    if (victim) this.removePlayer(victim.id, true);
+    const bot = members.find((p) => p.bot && !p.alive) || members.find((p) => p.bot);
+    if (bot) this.removePlayer(bot.id, true);
   }
 
   removePlayer(id, silent = false) {
     const p = this.players.get(id);
     if (!p) return;
-    if (p.alive && p.hasBomb) this.dropBomb(p.snake[0]);
-    if (p.alive) this.dropPellets(p.snake, 1);
-    p.alive = false;
+    if (p.alive) this.dropLoot(p);
     this.players.delete(id);
     if (!silent) this.emit('leave', { id, name: p.name });
-
-    if (this.humanCount() === 0 && !this.opts.bots) {
-      this.phase = 'idle';
-      return;
-    }
-    if (this.players.size === 0) {
-      this.phase = 'idle';
-    }
-  }
-
-  renamePlayer(id, name) {
-    const p = this.players.get(id);
-    if (p) p.name = String(name).slice(0, 16);
+    if (this.players.size === 0 || (this.humanCount() === 0 && !this.opts.bots)) this.phase = 'idle';
   }
 
   fillBots() {
     for (const team of ['T', 'CT']) {
       const members = this.teamMembers(team);
       const humans = members.filter((p) => !p.bot);
-      const bots = members.filter((p) => p.bot);
+      const list = members.filter((p) => p.bot);
       const want = this.opts.bots ? Math.max(0, this.opts.teamSize - humans.length) : 0;
-      while (bots.length > want) {
-        const b = bots.pop();
-        this.players.delete(b.id);
-      }
-      while (bots.length < want) {
+      while (list.length > want) this.players.delete(list.pop().id);
+      while (list.length < want) {
         const used = new Set([...this.players.values()].map((p) => p.name));
         const free = BOT_NAMES.filter((n) => !used.has(`BOT ${n}`));
         const name = `BOT ${free.length ? pick(free) : `${pick(BOT_NAMES)}${rand(99)}`}`;
@@ -308,273 +214,148 @@ export class Game {
         const b = createPlayer(`bot-${this.botSeq}`, name, true, team);
         b.skin = Math.random() < 0.45 ? 'classic' : pick(SKINS).id;
         this.players.set(b.id, b);
-        bots.push(b);
+        list.push(b);
       }
     }
-  }
-
-  autoBalance() {
-    const hT = this.teamMembers('T').filter((p) => !p.bot);
-    const hC = this.teamMembers('CT').filter((p) => !p.bot);
-    if (Math.abs(hT.length - hC.length) < 2) return;
-    const [big, target] = hT.length > hC.length ? [hT, 'CT'] : [hC, 'T'];
-    const mover = big.sort((a, b) => b.joinedAt - a.joinedAt)[0];
-    mover.team = target;
-    mover.armor = false;
-    mover.kit = false;
-    this.emit('teamswitch', { id: mover.id, name: mover.name, team: target });
   }
 
   startMatch() {
     this.score = { T: 0, CT: 0 };
-    this.round = 0;
-    this.halftimeDone = false;
-    this.swapPending = false;
-    this.matchWinner = null;
-    this.roundResult = null;
-    for (const p of this.players.values()) {
-      p.money = CONFIG.money.start;
-      p.kills = 0;
-      p.deaths = 0;
-      p.mvps = 0;
-      p.armor = false;
-      p.he = 0;
-      p.flash = 0;
-      p.smoke = 0;
-      p.kit = false;
-      p.survived = false;
-    }
-    this.autoBalance();
-    this.fillBots();
-    if (!this.teamsReady()) {
-      this.startWarmup();
-      return;
-    }
-    this.emit('matchstart', { winRounds: this.opts.winRounds });
-    this.startRound();
-  }
-
-  startWarmup() {
-    this.phase = 'warmup';
-    this.timer = 0;
-    this.resetEntities();
-    for (const p of this.players.values()) {
-      p.money = CONFIG.money.max;
-      this.spawnAnywhere(p);
-    }
-    this.emit('warmup');
-  }
-
-  resetEntities() {
-    this.crates = [];
-    this.pellets = [];
+    this.winner = null;
+    this.loot = [];
     this.bullets = [];
     this.grenades = [];
     this.smokes = [];
-    this.bomb = freshBomb();
+    this.lootTimer = 0;
+    this.goldenTimer = CONFIG.goldenEvery;
     for (const p of this.players.values()) {
+      p.kills = 0;
+      p.deaths = 0;
+      p.downs = 0;
+      p.streak = 0;
       p.alive = false;
-      p.snake = [];
-      p.hasBomb = false;
     }
-  }
-
-  startRound() {
-    if (this.swapPending) {
-      this.swapPending = false;
-      this.halftimeDone = true;
-      for (const p of this.players.values()) {
-        p.team = p.team === 'T' ? 'CT' : 'T';
-        p.money = CONFIG.money.start;
-        p.armor = false;
-        p.he = 0;
-        p.flash = 0;
-        p.smoke = 0;
-        p.kit = false;
-        p.survived = false;
-      }
-      this.emit('halftime');
-    }
-
-    this.round += 1;
-    this.autoBalance();
     this.fillBots();
-    this.resetEntities();
-    this.roundResult = null;
-
-    for (const team of ['T', 'CT']) {
-      const slots = shuffle([0, 1, 2, 3, 4]);
-      this.teamMembers(team).forEach((p, i) => {
-        if (!p.survived) {
-          p.armor = false;
-          p.he = 0;
-          p.flash = 0;
-          p.smoke = 0;
-          p.kit = false;
-        }
-        this.spawnPlayer(p, slots[i % slots.length]);
-      });
+    for (let i = 0; i < Math.ceil(CONFIG.lootMax / 2); i += 1) this.spawnLoot();
+    for (const p of this.players.values()) this.spawn(p);
+    if (!this.teamsReady()) {
+      this.phase = 'warmup';
+      this.time = 0;
+      this.emit('warmup');
+      return;
     }
+    this.phase = 'countdown';
+    this.time = CONFIG.countdown;
+    this.emit('matchstart', { goal: this.opts.scoreToWin });
+    const talker = pick([...this.players.values()].filter((p) => p.bot));
+    if (talker) this.botChat(talker, 'start', 0.5);
+  }
 
-    const ts = this.teamMembers('T').filter((p) => p.alive);
-    if (ts.length) {
-      const carrier = pick(ts);
-      carrier.hasBomb = true;
-      this.bomb.state = 'carried';
-      this.bomb.carrier = carrier.id;
-      this.bomb.x = carrier.snake[0].x;
-      this.bomb.y = carrier.snake[0].y;
-    }
-
-    this.plan = Math.random() < 0.5 ? 'A' : 'B';
-    let ctIndex = rand(2);
+  endMatch() {
+    this.phase = 'matchover';
+    this.time = CONFIG.matchOver;
+    this.winner = this.score.T === this.score.CT ? 'draw' : this.score.T > this.score.CT ? 'T' : 'CT';
     for (const p of this.players.values()) {
-      if (!p.bot) continue;
-      p.ai.goal = null;
-      p.ai.retarget = 0;
-      p.ai.seen = 0;
-      if (p.team === 'T') {
-        p.ai.waypoint = pick(T_ROUTES[this.plan]);
-      } else {
-        p.ai.site = ctIndex % 2 === 0 ? 'A' : 'B';
-        ctIndex += 1;
-        p.ai.waypoint = null;
+      p.fireHeld = false;
+      p.mvx = 0;
+      p.mvy = 0;
+    }
+    this.emit('matchend', { winner: this.winner });
+  }
+
+  spawn(p) {
+    const cells = this.spawnCells[p.team];
+    const others = [...this.players.values()].filter((o) => o.alive && o !== p);
+    let cell = pick(cells);
+    for (let i = 0; i < 20; i += 1) {
+      const c = pick(cells);
+      if (others.every((o) => Math.hypot(o.x - c.x, o.y - c.y) > 1.6)) {
+        cell = c;
+        break;
       }
-      this.botBuy(p);
     }
-
-    this.phase = 'freeze';
-    this.timer = this.T.freeze;
-    this.refillCrates(true);
-    this.emit('freeze', { round: this.round });
-    if (Math.random() < 0.35) {
-      const bot = pick([...this.players.values()].filter((p) => p.bot));
-      if (bot) this.botChat(bot, 'start', 1);
-    }
-  }
-
-  spawnPlayer(p, slot) {
-    const s = SPAWNS[p.team][slot % SPAWNS[p.team].length];
-    const D = DIRS[s.d];
-    p.snake = [];
-    for (let i = 0; i < CONFIG.startLength; i += 1) {
-      p.snake.push({ x: s.x - D.x * i, y: s.y - D.y * i });
-    }
-    this.resetLife(p, s.d);
-  }
-
-  resetLife(p, dir) {
-    p.dir = dir;
-    p.queue = [];
-    p.growBy = 0;
+    p.x = cell.x;
+    p.y = cell.y;
+    p.angle = p.team === 'T' ? 0 : Math.PI;
+    p.aim = p.angle;
+    const bx = -Math.cos(p.angle);
+    const by = -Math.sin(p.angle);
+    p.trail = [];
+    for (let i = 1; i <= 12; i += 1) p.trail.push({ x: p.x + bx * i * 0.25, y: p.y + by * i * 0.25 });
+    p.followers = [];
+    for (let i = 0; i < CONFIG.startFollowers; i += 1) this.addFollower(p);
+    this.placeFollowers(p);
     p.alive = true;
-    p.stamina = CONFIG.staminaMax;
-    p.boostLocked = false;
-    p.boosting = false;
-    p.fireCd = 0;
+    p.hp = CONFIG.leaderHp;
+    p.weapon = 'pistol';
+    p.ammo = WEAPONS.pistol.mag;
+    p.reload = 0;
+    p.cd = 0;
+    p.he = 0;
+    p.flash = 0;
+    p.smoke = 0;
     p.flashed = 0;
-    p.actionHeld = false;
-    p.acting = null;
-    p.wantThrow = null;
-    p.wantFire = false;
-    p.hasBomb = false;
-    p.moved = 0;
+    p.shield = CONFIG.spawnShield;
     p.respawn = 0;
-    p.roundKills = 0;
-    p.extBought = false;
+    p.mvx = 0;
+    p.mvy = 0;
+    p.moving = false;
+    p.started = p.bot;
+    p.heading = p.angle;
+    p.turnSign = 0;
+    p.fireHeld = false;
+    p.wantThrow = null;
     p.spawnSeq += 1;
+    if (p.ai) {
+      p.ai.goal = null;
+      p.ai.path = [];
+      p.ai.seen = 0;
+    }
+    this.emit('spawn', { id: p.id, x: p.x, y: p.y });
   }
 
-  spawnAnywhere(p) {
-    const slots = shuffle([0, 1, 2, 3, 4]);
-    for (const slot of slots) {
-      const s = SPAWNS[p.team][slot];
-      const D = DIRS[s.d];
-      let free = true;
-      for (let i = 0; i < CONFIG.startLength; i += 1) {
-        if (this.cellOccupied(s.x - D.x * i, s.y - D.y * i)) {
-          free = false;
-          break;
-        }
-      }
-      if (free) {
-        this.spawnPlayer(p, slot);
-        return true;
-      }
-    }
-    p.alive = false;
-    p.respawn = 5;
-    return false;
-  }
-
-  endRound(winner, reason) {
-    if (this.phase !== 'live' && this.phase !== 'planted') return;
-    this.phase = 'over';
-    this.timer = this.T.result;
-    this.score[winner] += 1;
-
-    let mvp = null;
-    for (const p of this.players.values()) {
-      p.survived = p.alive;
-      const bonus = p.team === winner ? CONFIG.money.win : CONFIG.money.loss;
-      p.money = Math.min(CONFIG.money.max, p.money + bonus);
-      if (p.team === winner && (!mvp || p.roundKills > mvp.roundKills)) mvp = p;
-    }
-    if (reason === 'defuse' && this.bomb.defuser) mvp = this.players.get(this.bomb.defuser) || mvp;
-    if (reason === 'bomb' && this.bomb.planter && (!mvp || mvp.roundKills < 2)) {
-      mvp = this.players.get(this.bomb.planter) || mvp;
-    }
-    if (mvp) mvp.mvps += 1;
-
-    this.roundResult = { winner, reason, mvp: mvp ? mvp.id : null };
-    this.emit('roundend', { winner, reason, mvp: mvp ? mvp.id : null });
-
-    const winBot = pick([...this.players.values()].filter((p) => p.bot && p.team === winner));
-    if (winBot) this.botChat(winBot, 'win', 0.3);
-
-    if (this.score[winner] >= this.opts.winRounds) {
-      this.matchWinner = winner;
-    } else if (!this.halftimeDone && this.score.T + this.score.CT === this.opts.halftime) {
-      this.swapPending = true;
-    }
+  addFollower(p) {
+    if (p.followers.length >= CONFIG.maxFollowers) return false;
+    const d = (p.followers.length + 1) * CONFIG.spacing;
+    p.followers.push({ id: this.uid++, hp: CONFIG.followerHp, d, x: p.x, y: p.y, cd: Math.random() * 0.5 });
+    return true;
   }
 
   input(id, msg) {
     const p = this.players.get(id);
     if (!p || !Array.isArray(msg)) return;
-    const [type, v] = msg;
+    const [type, a, b] = msg;
     switch (type) {
-      case 'd': {
-        const d = Number(v);
-        if (!Number.isInteger(d) || d < 0 || d > 3 || !p.alive) return;
-        if (this.phase === 'freeze') {
-          const h = p.snake[0];
-          const neck = p.snake[1];
-          const nx = h.x + DIRS[d].x;
-          const ny = h.y + DIRS[d].y;
-          if (!neck || neck.x !== nx || neck.y !== ny) p.dir = d;
-          p.queue.length = 0;
-          return;
+      case 'mv': {
+        let x = Number(a);
+        let y = Number(b);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        const len = Math.hypot(x, y);
+        if (len > 1) {
+          x /= len;
+          y /= len;
         }
-        const last = p.queue.length ? p.queue[p.queue.length - 1] : p.dir;
-        if (d === last) return;
-        if (p.queue.length < 3) p.queue.push(d);
+        p.mvx = x;
+        p.mvy = y;
         return;
       }
-      case 'a':
-        p.actionHeld = Boolean(v);
+      case 'aim': {
+        const angle = Number(a);
+        if (!Number.isFinite(angle)) return;
+        p.aim = angle;
+        const d = Number(b);
+        if (Number.isFinite(d)) p.aimDist = clamp(d, 1, 30);
+        p.aimStick = Boolean(msg[3]);
         return;
-      case 'b':
-        p.boostHeld = Boolean(v);
-        return;
+      }
       case 'f':
-        p.fireHeld = Boolean(v);
+        p.fireHeld = Boolean(a);
+        return;
+      case 'r':
+        if (p.alive && p.reload <= 0 && p.ammo < WEAPONS[p.weapon].mag) this.startReload(p);
         return;
       case 'g':
-        if (v === 'he' || v === 'flash' || v === 'smoke') p.wantThrow = v;
-        return;
-      case 'buy':
-        this.buy(p, v);
+        if (a === 'he' || a === 'flash' || a === 'smoke') p.wantThrow = a;
         return;
       default:
     }
@@ -584,381 +365,545 @@ export class Game {
     const p = this.players.get(id);
     if (!p) return;
     const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-    if (!clean) return;
-    this.emit('chat', { id, name: p.name, team: p.team, text: clean });
+    if (clean) this.emit('chat', { id, name: p.name, team: p.team, text: clean });
   }
 
-  canBuy() {
-    return this.phase === 'freeze' || this.phase === 'warmup';
-  }
-
-  buy(p, itemId) {
-    const item = SHOP.find((s) => s.id === itemId);
-    if (!item) return false;
-    const fail = (msg) => {
-      if (!p.bot) this.emit('buyfail', { to: p.id, msg });
-      return false;
-    };
-    if (!this.canBuy()) return fail('Achats uniquement pendant le freeze time');
-    if (item.team && item.team !== p.team) return fail('Réservé aux CT');
-    if (item.id === 'armor' && p.armor) return fail('Déjà équipé');
-    if (item.id === 'kit' && p.kit) return fail('Déjà équipé');
-    if ((item.id === 'he' || item.id === 'flash' || item.id === 'smoke') && p[item.id] >= 1) {
-      return fail('Une seule par type');
-    }
-    if (item.id === 'ext' && p.extBought) return fail('Déjà acheté ce round');
-    const free = this.phase === 'warmup';
-    if (!free && p.money < item.price) return fail('Pas assez d\'argent');
-    if (!free) p.money -= item.price;
-
-    if (item.id === 'armor') p.armor = true;
-    else if (item.id === 'kit') p.kit = true;
-    else if (item.id === 'ext') {
-      p.extBought = true;
-      p.growBy += 5;
-    } else p[item.id] += 1;
-
-    this.emit('buy', { id: p.id, item: item.id });
-    return true;
+  botChat(p, kind, chance) {
+    if (Math.random() > chance || this.tickCount - this.lastBotChat < 80) return;
+    this.lastBotChat = this.tickCount;
+    this.emit('chat', { id: p.id, name: p.name, team: p.team, text: pick(BOT_LINES[kind]) });
   }
 
   step() {
     this.tickCount += 1;
+    this.newBullets = [];
     switch (this.phase) {
       case 'warmup':
-        if (this.teamsReady()) {
-          this.startMatch();
-          break;
-        }
-        this.simulate();
-        this.warmupRespawns();
+        if (this.teamsReady()) this.startMatch();
+        else this.simulate();
         break;
-      case 'freeze':
-        if (!this.teamsReady()) {
-          this.startWarmup();
-          break;
-        }
-        this.timer -= 1;
-        if (this.timer <= 0) {
+      case 'countdown':
+        this.tickTimers();
+        this.time -= DT;
+        if (this.time <= 0) {
           this.phase = 'live';
-          this.timer = this.T.round;
-          for (const p of this.players.values()) p.wantThrow = null;
+          this.time = CONFIG.matchTime;
           this.emit('live');
         }
         break;
       case 'live':
         if (!this.teamsReady()) {
-          this.startWarmup();
+          this.phase = 'warmup';
+          this.emit('warmup');
           break;
         }
         this.simulate();
-        if (this.phase === 'live') {
-          this.timer -= 1;
-          if (this.timer <= 0) this.endRound('CT', 'time');
-        }
-        break;
-      case 'planted':
-        this.simulate();
-        break;
-      case 'over':
-        this.simulate();
-        this.timer -= 1;
-        if (this.timer <= 0) {
-          if (this.matchWinner) {
-            this.phase = 'matchover';
-            this.timer = this.T.matchOver;
-            this.emit('matchend', { winner: this.matchWinner });
-          } else {
-            this.startRound();
-          }
-        }
+        this.time -= DT;
+        if (this.phase === 'live' && this.time <= 0) this.endMatch();
         break;
       case 'matchover':
-        this.timer -= 1;
-        if (this.timer <= 0) this.startMatch();
+        this.time -= DT;
+        if (this.time <= 0) this.startMatch();
         break;
       default:
     }
-    this.updateVision();
+    if (this.tickCount % 2 === 0) this.updateVision();
     const snap = this.snapshot();
     this.events = [];
     return snap;
   }
 
-  warmupRespawns() {
+  tickTimers() {
     for (const p of this.players.values()) {
-      if (p.alive) continue;
-      p.respawn -= 1;
-      if (p.respawn <= 0) this.spawnAnywhere(p);
+      if (p.shield > 0) p.shield -= DT;
+      if (p.flashed > 0) p.flashed -= DT;
+      if (p.cd > 0) p.cd -= DT;
+      if (p.reload > 0) {
+        p.reload -= DT;
+        if (p.reload <= 0) p.ammo = WEAPONS[p.weapon].mag;
+      }
     }
-  }
-
-  alivePlayers() {
-    const out = [];
-    for (const p of this.players.values()) if (p.alive) out.push(p);
-    return out;
   }
 
   simulate() {
-    const alive = this.alivePlayers();
-
-    for (const p of alive) {
-      if (p.fireCd > 0) p.fireCd -= 1;
-      if (p.flashed > 0) p.flashed -= 1;
+    this.tickTimers();
+    for (const p of this.players.values()) {
+      if (p.alive) continue;
+      p.respawn -= DT;
+      if (p.respawn <= 0) this.spawn(p);
     }
-
-    this.buildOcc(alive);
-    for (const p of alive) {
-      if (p.bot) this.botThink(p, alive);
-    }
-
-    for (const p of alive) p.acting = this.actingOf(p);
-
-    for (const p of alive) {
-      p.moved = 0;
-      p.boosting = false;
-      p.steps = p.acting ? 0 : 1;
-      if (p.stamina < CONFIG.boostCost) p.boostLocked = true;
-      if (p.boostLocked && p.stamina >= CONFIG.boostRestart) p.boostLocked = false;
-      if (p.steps && p.boostHeld && !p.boostLocked) {
-        p.steps = 2;
-        p.boosting = true;
-        p.stamina -= CONFIG.boostCost;
-      } else {
-        p.stamina = Math.min(CONFIG.staminaMax, p.stamina + CONFIG.staminaRegen);
-      }
-    }
-
-    for (let sub = 0; sub < 2; sub += 1) {
-      const movers = alive.filter((p) => p.alive && p.steps > sub);
-      if (!movers.length) break;
-      this.moveStep(movers, alive);
-    }
-
-    for (const p of alive) {
-      if (!p.alive) continue;
-      if ((p.fireHeld || p.wantFire) && p.fireCd === 0 && p.snake.length >= CONFIG.minFireLength) {
-        this.fire(p);
-      }
-      p.wantFire = false;
-      if (p.wantThrow) {
-        this.throwGrenade(p, p.wantThrow);
-        p.wantThrow = null;
-      }
-    }
-
-    this.updateBullets(alive);
+    const alive = [...this.players.values()].filter((p) => p.alive);
+    for (const p of alive) if (p.bot) this.botThink(p, alive);
+    for (const p of alive) this.move(p, alive);
+    for (const p of alive) this.placeFollowers(p);
+    this.buildSoldierGrid(alive);
+    for (const p of alive) this.shoot(p);
+    this.updateBullets();
     this.updateGrenades(alive);
     this.updateSmokes();
-    this.updateObjectives(alive);
-    this.refillCrates(false);
-
-    if (this.phase === 'live' || this.phase === 'planted') this.checkWin();
-  }
-
-  buildOcc(alive) {
-    const { width } = this.map;
-    this.occ.T.p.fill(-1);
-    this.occ.CT.p.fill(-1);
-    this.occList = alive;
-    for (let pi = 0; pi < alive.length; pi += 1) {
-      const p = alive[pi];
-      if (!p.alive) continue;
-      const grid = this.occ[p.team];
-      const skipTail = p.stepping && p.growBy === 0 ? 1 : 0;
-      for (let s = p.snake.length - 1 - skipTail; s >= 0; s -= 1) {
-        const c = p.snake[s];
-        const i = c.y * width + c.x;
-        grid.p[i] = pi;
-        grid.s[i] = s;
-      }
+    this.updateLoot(alive);
+    if (this.phase === 'live') {
+      const goal = this.opts.scoreToWin;
+      if (this.score.T >= goal || this.score.CT >= goal) this.endMatch();
     }
   }
 
-  occAt(x, y, team) {
-    if (this.isWall(x, y)) return null;
-    const grid = this.occ[team];
-    const i = y * this.map.width + x;
-    const pi = grid.p[i];
-    if (pi < 0) return null;
-    const p = this.occList[pi];
-    if (!p || !p.alive) return null;
-    return { p, seg: grid.s[i] };
-  }
-
-  hitsSelf(m, x, y) {
-    const last = m.snake.length - (m.growBy === 0 ? 1 : 0);
-    for (let i = 1; i < last; i += 1) {
-      if (m.snake[i].x === x && m.snake[i].y === y) return true;
+  blockedAt(p, x, y, alive, ignoreSelf) {
+    if (circleHitsWall(this.map, x, y, CONFIG.leaderRadius)) return true;
+    const reach = CONFIG.leaderRadius + CONFIG.soldierRadius - 0.04;
+    const r2max = reach * reach;
+    if (!ignoreSelf) {
+      for (let i = 2; i < p.followers.length; i += 1) {
+        const f = p.followers[i];
+        if ((f.x - x) ** 2 + (f.y - y) ** 2 < r2max) return true;
+      }
+    }
+    for (const o of alive) {
+      if (o === p || o.team === p.team || !o.alive) continue;
+      if ((o.x - x) ** 2 + (o.y - y) ** 2 < r2max) return true;
+      for (const f of o.followers) if ((f.x - x) ** 2 + (f.y - y) ** 2 < r2max) return true;
     }
     return false;
   }
 
-  moveStep(movers, alive) {
-    for (const m of movers) m.stepping = true;
-    this.buildOcc(alive);
-
-    for (const m of movers) {
-      while (m.queue.length) {
-        const d = m.queue.shift();
-        if (d !== m.dir && d !== opposite(m.dir)) {
-          m.dir = d;
-          break;
-        }
-      }
-      const h = m.snake[0];
-      const D = DIRS[m.dir];
-      m.nh = { x: h.x + D.x, y: h.y + D.y };
+  move(p, alive) {
+    p.moving = false;
+    p.turning = false;
+    const len = Math.hypot(p.mvx, p.mvy);
+    if (len >= 0.15) {
+      p.started = true;
+      p.heading = Math.atan2(p.mvy, p.mvx);
     }
-
-    const dead = new Map();
-    const heads = new Map();
-    const { width } = this.map;
-
-    for (const m of movers) {
-      const { x, y } = m.nh;
-      if (this.isWall(x, y)) {
-        dead.set(m, { killer: null, how: 'wall' });
-        continue;
+    if (!p.started) {
+      p.stuck = 0;
+      return;
+    }
+    const want = p.heading;
+    const diff = Math.atan2(Math.sin(want - p.angle), Math.cos(want - p.angle));
+    const maxTurn = CONFIG.turnRate * DT;
+    let sign = Math.sign(diff) || 1;
+    if (Math.abs(diff) > 2.5) {
+      if (!p.turnSign) {
+        const side = (s) => circleHitsWall(this.map, p.x - Math.sin(p.angle) * s * 0.9, p.y + Math.cos(p.angle) * s * 0.9, CONFIG.leaderRadius);
+        p.turnSign = side(sign) && !side(-sign) ? -sign : sign;
       }
-      if (this.hitsSelf(m, x, y)) {
-        dead.set(m, { killer: null, how: 'self' });
-      } else {
-        const hit = this.occAt(x, y, enemyOf(m.team));
-        if (hit) {
-          const o = hit.p;
-          if (hit.seg === 0 && o.stepping && o.nh && same(o.nh, m.snake[0])) {
-            this.resolveHeadOn(m, [o], dead);
-          } else {
-            dead.set(m, { killer: o, how: 'body' });
+      sign = p.turnSign;
+    } else if (Math.abs(diff) < 0.3) {
+      p.turnSign = 0;
+    }
+    p.angle = Math.abs(diff) <= maxTurn ? want : p.angle + sign * maxTurn;
+    p.turning = Math.abs(diff) > 0.35;
+    const mx = Math.cos(p.angle);
+    const my = Math.sin(p.angle);
+    const speed = CONFIG.speed * (p.weapon === 'sniper' ? 0.85 : 1) * (p.flashed > 0 ? 0.7 : 1);
+    const stepLen = speed * DT;
+    const ignoreSelf = p.stuck > 0.5;
+    const tries = [
+      [p.x + mx * stepLen, p.y + my * stepLen],
+      [p.x + Math.sign(mx) * stepLen * Math.min(1, Math.abs(mx) + 0.3), p.y],
+      [p.x, p.y + Math.sign(my) * stepLen * Math.min(1, Math.abs(my) + 0.3)]
+    ];
+    for (const [nx, ny] of tries) {
+      if ((nx === p.x && ny === p.y) || this.blockedAt(p, nx, ny, alive, ignoreSelf)) continue;
+      p.x = nx;
+      p.y = ny;
+      p.moving = true;
+      break;
+    }
+    p.stuck = p.moving ? 0 : p.stuck + DT;
+  }
+
+  placeFollowers(p) {
+    const head = { x: p.x, y: p.y };
+    const last = p.trail[0];
+    if (!last || Math.hypot(last.x - p.x, last.y - p.y) >= 0.2) p.trail.unshift(head);
+    trimTrail(head, p.trail, (CONFIG.maxFollowers + 3) * CONFIG.spacing);
+    const pts = [head, ...p.trail];
+    p.followers.forEach((f, i) => {
+      const target = (i + 1) * CONFIG.spacing;
+      f.d = f.d > target ? Math.max(target, f.d - 6 * DT) : target;
+      const pos = pointAlong(pts, f.d);
+      f.x = pos.x;
+      f.y = pos.y;
+    });
+  }
+
+  startReload(p) {
+    p.reload = WEAPONS[p.weapon].reload;
+    this.emit('reload', { id: p.id });
+  }
+
+  buildSoldierGrid(alive) {
+    this.soldierGrid = new Map();
+    const w = this.map.width;
+    const add = (owner, f, x, y) => {
+      const key = Math.round(y) * w + Math.round(x);
+      let list = this.soldierGrid.get(key);
+      if (!list) {
+        list = [];
+        this.soldierGrid.set(key, list);
+      }
+      list.push({ owner, f, x, y });
+    };
+    for (const p of alive) {
+      add(p, null, p.x, p.y);
+      for (const f of p.followers) add(p, f, f.x, f.y);
+    }
+  }
+
+  spawnBullets(p, ox, oy, angle, mult) {
+    const w = WEAPONS[p.weapon];
+    const spread = w.spread * (p.turning && p.weapon !== 'shotgun' ? 2 : 1) + (p.flashed > 0 ? 0.25 : 0);
+    for (let k = 0; k < w.pellets; k += 1) {
+      const a = angle + (Math.random() * 2 - 1) * spread;
+      const b = {
+        id: this.uid++,
+        owner: p.id,
+        team: p.team,
+        weapon: p.weapon,
+        x: ox,
+        y: oy,
+        vx: Math.cos(a),
+        vy: Math.sin(a),
+        speed: w.speed,
+        range: w.range,
+        dmg: w.dmg * mult
+      };
+      this.bullets.push(b);
+      this.newBullets.push([b.id, r2(ox), r2(oy), r2(a), w.speed, w.range, p.team === 'T' ? 0 : 1, WEAPON_KEYS.indexOf(p.weapon)]);
+    }
+  }
+
+  shoot(p) {
+    const w = WEAPONS[p.weapon];
+    if (p.wantThrow) {
+      this.throwGrenade(p, p.wantThrow);
+      p.wantThrow = null;
+    }
+    const firing = (p.fireHeld || p.wantFire) && p.reload <= 0 && p.ammo > 0;
+    p.wantFire = false;
+    if (!firing) return;
+    const reach = Math.max(3, p.aimDist);
+    let tx = p.x + Math.cos(p.aim) * reach;
+    let ty = p.y + Math.sin(p.aim) * reach;
+    let angle = p.aim;
+    const lock = p.bot ? null : this.assistTarget(p, w, tx, ty);
+    if (lock) {
+      tx = lock.x;
+      ty = lock.y;
+      angle = Math.atan2(ty - p.y, tx - p.x);
+    }
+    if (p.cd <= 0) {
+      p.cd = 1 / w.rate;
+      p.ammo -= 1;
+      this.spawnBullets(p, p.x + Math.cos(angle) * 0.45, p.y + Math.sin(angle) * 0.45, angle, 1);
+      this.emit('shot', { id: p.id, x: r2(p.x), y: r2(p.y), a: r2(angle), w: p.weapon });
+      if (p.ammo <= 0) this.startReload(p);
+    }
+    const shooters = Math.min(CONFIG.firingFollowers, p.followers.length);
+    for (let i = 0; i < shooters; i += 1) {
+      const f = p.followers[i];
+      f.cd -= DT;
+      if (f.cd > 0) continue;
+      f.cd = (1 / (w.rate * CONFIG.followerRate)) * (0.8 + Math.random() * 0.4);
+      const a = Math.atan2(ty - f.y, tx - f.x);
+      this.spawnBullets(p, f.x + Math.cos(a) * 0.4, f.y + Math.sin(a) * 0.4, a, CONFIG.followerDamage);
+    }
+  }
+
+  assistTarget(p, w, ax, ay) {
+    const cone = p.aimStick ? CONFIG.assistConeStick : CONFIG.assistCone;
+    let best = null;
+    let bestScore = Infinity;
+    for (const o of this.players.values()) {
+      if (!o.alive || o.team === p.team || !this.canSee(p.team, o)) continue;
+      const d = Math.hypot(o.x - p.x, o.y - p.y);
+      if (d > w.range + 1) continue;
+      const off = Math.abs(Math.atan2(Math.sin(Math.atan2(o.y - p.y, o.x - p.x) - p.aim), Math.cos(Math.atan2(o.y - p.y, o.x - p.x) - p.aim)));
+      const near = Math.hypot(o.x - ax, o.y - ay);
+      if (off > cone && near > CONFIG.assistRadius) continue;
+      if (!lineClear(this.map, p.x, p.y, o.x, o.y)) continue;
+      const score = off * d + near * 0.5;
+      if (score < bestScore) {
+        bestScore = score;
+        best = { o, d };
+      }
+    }
+    if (!best) return null;
+    const { o, d } = best;
+    const t = (d / w.speed) * 0.85;
+    return o.moving ? { x: o.x + Math.cos(o.angle) * CONFIG.speed * t, y: o.y + Math.sin(o.angle) * CONFIG.speed * t } : { x: o.x, y: o.y };
+  }
+
+  updateBullets() {
+    const w = this.map.width;
+    const keep = [];
+    const bodyR2 = CONFIG.soldierRadius * CONFIG.soldierRadius;
+    const leadR2 = CONFIG.leaderHitRadius * CONFIG.leaderHitRadius;
+    for (const b of this.bullets) {
+      let travel = b.speed * DT;
+      let done = false;
+      while (travel > 0 && !done) {
+        const step = Math.min(0.25, travel);
+        travel -= step;
+        b.x += b.vx * step;
+        b.y += b.vy * step;
+        b.range -= step;
+        const cx = Math.round(b.x);
+        const cy = Math.round(b.y);
+        if (this.isWall(cx, cy)) break;
+        for (let dy = -1; dy <= 1 && !done; dy += 1) {
+          for (let dx = -1; dx <= 1 && !done; dx += 1) {
+            const list = this.soldierGrid.get((cy + dy) * w + cx + dx);
+            if (!list) continue;
+            for (const s of list) {
+              if (s.owner.team === b.team || !s.owner.alive) continue;
+              if (s.f && !s.owner.followers.includes(s.f)) continue;
+              if ((s.x - b.x) ** 2 + (s.y - b.y) ** 2 > (s.f ? bodyR2 : leadR2)) continue;
+              this.damage(s.owner, s.f, b.dmg, this.players.get(b.owner) || null, b.weapon, b.x, b.y);
+              this.emit('bhit', { b: b.id, x: r2(b.x), y: r2(b.y) });
+              done = true;
+              break;
+            }
           }
         }
+        if (b.range <= 0) break;
       }
-      const key = y * width + x;
-      if (!heads.has(key)) heads.set(key, []);
-      heads.get(key).push(m);
+      if (!done && b.range > 0 && !this.isWall(Math.round(b.x), Math.round(b.y))) keep.push(b);
     }
-
-    for (const group of heads.values()) {
-      if (group.length < 2) continue;
-      for (const m of group) {
-        const enemies = group.filter((o) => o.team !== m.team);
-        if (enemies.length) this.resolveHeadOn(m, enemies, dead);
-      }
-    }
-
-    for (const m of movers) {
-      m.stepping = false;
-      if (dead.has(m)) continue;
-      m.snake.unshift(m.nh);
-      if (m.growBy > 0) m.growBy -= 1;
-      else m.snake.pop();
-      m.moved += 1;
-      this.collect(m);
-    }
-
-    for (const [p, info] of dead) this.kill(p, info.killer, info.how);
+    this.bullets = keep;
   }
 
-  resolveHeadOn(m, enemies, dead) {
-    if (dead.has(m)) return;
-    const strongest = enemies.reduce((a, b) => (b.snake.length > a.snake.length ? b : a));
-    if (m.snake.length <= strongest.snake.length) dead.set(m, { killer: strongest, how: 'headon' });
-  }
-
-  collect(p) {
-    const h = p.snake[0];
-    const ci = this.crates.findIndex((c) => same(c, h));
-    if (ci >= 0) {
-      this.crates.splice(ci, 1);
-      p.growBy += CONFIG.crateGrow;
-      this.emit('pickup', { id: p.id, k: 'crate', x: h.x, y: h.y });
+  damage(owner, follower, dmg, attacker, how, x, y) {
+    if (!owner.alive || owner.shield > 0) return;
+    const by = attacker ? attacker.id : null;
+    if (!follower) {
+      owner.hp -= dmg;
+      this.emit('hit', { id: owner.id, by, x: r2(x), y: r2(y), dmg: Math.round(dmg), lead: 1 });
+      if (owner.hp <= 0) this.kill(owner, attacker, how);
+      return;
     }
-    const pi = this.pellets.findIndex((c) => same(c, h));
-    if (pi >= 0) {
-      this.pellets.splice(pi, 1);
-      p.growBy += 1;
-      this.emit('pickup', { id: p.id, k: 'pellet', x: h.x, y: h.y });
-    }
-    if (this.bomb.state === 'ground' && p.team === 'T' && same(this.bomb, h)) {
-      this.bomb.state = 'carried';
-      this.bomb.carrier = p.id;
-      p.hasBomb = true;
-      this.emit('bombpick', { id: p.id });
-    }
-  }
-
-  dropPellets(cells, every = 2) {
-    for (let i = 1; i < cells.length; i += every) {
-      if (this.pellets.length >= CONFIG.maxPellets) break;
-      const c = cells[i];
-      if (!this.pellets.some((k) => same(k, c))) this.pellets.push({ x: c.x, y: c.y });
-    }
+    follower.hp -= dmg;
+    this.emit('hit', { id: owner.id, by, x: r2(x), y: r2(y), dmg: Math.round(dmg), lead: 0 });
+    if (follower.hp > 0) return;
+    const i = owner.followers.indexOf(follower);
+    if (i < 0) return;
+    owner.followers.splice(i, 1);
+    if (attacker && attacker.team !== owner.team) attacker.downs += 1;
+    if (Math.random() < CONFIG.tagChance) this.addLoot('tag', follower.x, follower.y);
+    this.emit('down', { id: owner.id, by, x: r2(follower.x), y: r2(follower.y) });
   }
 
   kill(p, killer, how) {
     if (!p.alive) return;
-    const head = p.snake[0];
     p.alive = false;
     p.deaths += 1;
-    p.respawn = this.T.warmupRespawn;
-    p.acting = null;
-    if (p.hasBomb) this.dropBomb(head);
-    p.hasBomb = false;
-    this.dropPellets(p.snake, 1);
-    p.snake = [];
-
+    p.respawn = CONFIG.respawn;
+    p.fireHeld = false;
+    this.dropLoot(p);
     let streak = 0;
     if (killer && killer !== p && killer.team !== p.team) {
       killer.kills += 1;
-      killer.roundKills += 1;
-      if (this.phase !== 'warmup') {
-        killer.money = Math.min(CONFIG.money.max, killer.money + CONFIG.money.kill);
-      }
-      killer.streak = this.tickCount - killer.lastKillTick <= 45 ? killer.streak + 1 : 1;
-      killer.lastKillTick = this.tickCount;
+      killer.streak = this.tickCount - killer.lastKill <= 100 ? killer.streak + 1 : 1;
+      killer.lastKill = this.tickCount;
       streak = killer.streak;
-      if (killer.bot) this.botChat(killer, 'kill', 0.18);
+      if (this.phase === 'live') this.score[killer.team] += 1;
+      if (killer.bot) this.botChat(killer, 'kill', 0.12);
     }
-    if (p.bot) this.botChat(p, 'death', 0.15);
-
-    const enemiesLeft = [...this.players.values()].filter((o) => o.team === p.team && o.alive).length;
-    const ace = Boolean(killer && killer.roundKills >= 5 && enemiesLeft === 0);
+    if (p.bot) this.botChat(p, 'death', 0.1);
     this.emit('kill', {
-      killer: killer && killer !== p ? killer.id : null,
+      killer: killer ? killer.id : null,
       victim: p.id,
       how,
       streak,
-      ace,
-      x: head ? head.x : 0,
-      y: head ? head.y : 0
+      squad: p.followers.length,
+      x: r2(p.x),
+      y: r2(p.y)
     });
+    p.followers = [];
   }
 
-  cut(p, index, killer, how) {
-    if (!p.alive || index <= 0 || index >= p.snake.length) return;
-    const removed = p.snake.splice(index);
-    this.dropPellets([removed[0], ...removed], 2);
-    this.emit('cut', {
-      victim: p.id,
-      by: killer ? killer.id : null,
-      n: removed.length,
-      x: removed[0].x,
-      y: removed[0].y
-    });
-    if (p.snake.length < 2) this.kill(p, killer, how);
+  dropLoot(p) {
+    for (const f of p.followers) if (Math.random() < CONFIG.tagChance) this.addLoot('tag', f.x, f.y);
+    if (p.weapon !== 'pistol') this.addLoot(p.weapon === 'golden' ? 'golden' : 'weapon', p.x, p.y, p.weapon);
   }
 
-  refillCrates(force) {
-    if (!force && this.tickCount % 12 !== 0) return;
-    const alive = this.alivePlayers().length;
-    const target = clamp(3 + Math.floor(alive / 2), 3, 8);
-    let guard = 0;
-    while (this.crates.length < target && guard < 10) {
-      guard += 1;
-      const c = this.randomFreeCell(true);
-      if (c) this.crates.push(c);
-      if (!force) break;
+  throwGrenade(p, type) {
+    if (p[type] < 1) return;
+    p[type] -= 1;
+    this.grenades.push({
+      id: this.uid++,
+      type,
+      owner: p.id,
+      team: p.team,
+      x: p.x,
+      y: p.y,
+      vx: Math.cos(p.aim),
+      vy: Math.sin(p.aim),
+      range: clamp(p.aimDist, 2, CONFIG.grenadeRange),
+      fuse: -1
+    });
+    this.emit('throw', { id: p.id, g: type, x: r2(p.x), y: r2(p.y) });
+  }
+
+  updateGrenades(alive) {
+    const keep = [];
+    for (const g of this.grenades) {
+      if (g.fuse < 0) {
+        let travel = CONFIG.grenadeSpeed * DT;
+        while (travel > 0 && g.range > 0) {
+          const step = Math.min(0.25, travel);
+          const nx = g.x + g.vx * step;
+          const ny = g.y + g.vy * step;
+          if (this.isWall(Math.round(nx), Math.round(ny))) {
+            g.range = 0;
+            break;
+          }
+          g.x = nx;
+          g.y = ny;
+          g.range -= step;
+          travel -= step;
+        }
+        if (g.range > 0) {
+          keep.push(g);
+          continue;
+        }
+        g.fuse = g.type === 'he' ? 0.6 : g.type === 'flash' ? 0.3 : 0;
+      }
+      g.fuse -= DT;
+      if (g.fuse > 0) {
+        keep.push(g);
+        continue;
+      }
+      this.detonate(g, alive);
+    }
+    this.grenades = keep;
+  }
+
+  detonate(g, alive) {
+    const owner = this.players.get(g.owner) || null;
+    const seen = (x, y) => lineClear(this.map, g.x, g.y, x, y);
+    if (g.type === 'he') {
+      this.emit('he', { x: r2(g.x), y: r2(g.y), id: g.owner });
+      for (const p of alive) {
+        if (!p.alive || p.team === g.team) continue;
+        for (const s of this.soldiersOf(p)) {
+          const d = Math.hypot(s.x - g.x, s.y - g.y);
+          if (d > CONFIG.heRadius || !seen(s.x, s.y)) continue;
+          this.damage(p, s.f, CONFIG.heDamage * (1 - d / (CONFIG.heRadius + 0.6)), owner, 'he', s.x, s.y);
+          if (!p.alive) break;
+        }
+      }
+    } else if (g.type === 'flash') {
+      const hit = [];
+      for (const p of alive) {
+        if (!p.alive || p.team === g.team) continue;
+        const d = Math.hypot(p.x - g.x, p.y - g.y);
+        if (d > CONFIG.flashRadius || !seen(p.x, p.y)) continue;
+        p.flashed = Math.max(p.flashed, CONFIG.flashTime * (1 - d / (CONFIG.flashRadius + 3)) + 0.4);
+        hit.push(p.id);
+      }
+      this.emit('flash', { x: r2(g.x), y: r2(g.y), id: g.owner, hit });
+    } else {
+      this.smokes.push({ x: g.x, y: g.y, r: CONFIG.smokeRadius, ttl: CONFIG.smokeTime });
+      this.emit('smoke', { x: r2(g.x), y: r2(g.y) });
+    }
+  }
+
+  updateSmokes() {
+    for (const s of this.smokes) s.ttl -= DT;
+    this.smokes = this.smokes.filter((s) => s.ttl > 0);
+  }
+
+  addLoot(kind, x, y, weapon = null) {
+    const item = { id: this.uid++, kind, x, y, w: weapon, ttl: kind === 'tag' ? 25 : Infinity };
+    this.loot.push(item);
+    return item;
+  }
+
+  spawnLoot() {
+    const regular = this.loot.filter((l) => l.kind !== 'tag' && l.kind !== 'golden').length;
+    if (regular >= CONFIG.lootMax) return;
+    const total = Object.values(LOOT).reduce((s, l) => s + l.weight, 0);
+    for (let i = 0; i < 20; i += 1) {
+      const c = pick(this.lootCells);
+      if (this.loot.some((l) => Math.hypot(l.x - c.x, l.y - c.y) < 4)) continue;
+      if ([...this.players.values()].some((p) => p.alive && Math.hypot(p.x - c.x, p.y - c.y) < 3)) continue;
+      let roll = Math.random() * total;
+      let kind = 'recruit';
+      for (const [k, v] of Object.entries(LOOT)) {
+        roll -= v.weight;
+        if (roll <= 0) {
+          kind = k;
+          break;
+        }
+      }
+      this.addLoot(kind, c.x, c.y, kind === 'weapon' ? pick(LOOT_WEAPONS) : null);
+      return;
+    }
+  }
+
+  updateLoot(alive) {
+    this.lootTimer -= DT;
+    if (this.lootTimer <= 0) {
+      this.lootTimer = CONFIG.lootEvery;
+      this.spawnLoot();
+    }
+    if (this.phase === 'live') {
+      const goldenOut =
+        this.loot.some((l) => l.kind === 'golden') || [...this.players.values()].some((p) => p.alive && p.weapon === 'golden');
+      if (goldenOut) this.goldenTimer = CONFIG.goldenEvery;
+      else {
+        this.goldenTimer -= DT;
+        if (this.goldenTimer <= 0) {
+          this.goldenTimer = CONFIG.goldenEvery;
+          this.addLoot('golden', this.center.x, this.center.y, 'golden');
+          this.emit('golden', { x: this.center.x, y: this.center.y });
+        }
+      }
+    }
+    for (const l of this.loot) l.ttl -= DT;
+    this.loot = this.loot.filter((l) => l.ttl > 0);
+    for (const p of alive) {
+      if (!p.alive) continue;
+      for (let i = this.loot.length - 1; i >= 0; i -= 1) {
+        const l = this.loot[i];
+        if (Math.hypot(l.x - p.x, l.y - p.y) > 0.8 || !this.applyLoot(p, l)) continue;
+        this.loot.splice(i, 1);
+        this.emit('pickup', { id: p.id, k: l.kind, w: l.w, x: r2(l.x), y: r2(l.y) });
+        if (l.kind === 'golden' && p.bot) this.botChat(p, 'golden', 0.6);
+      }
+    }
+  }
+
+  applyLoot(p, l) {
+    switch (l.kind) {
+      case 'recruit':
+      case 'tag':
+        return this.addFollower(p);
+      case 'medkit':
+        if (p.hp >= CONFIG.leaderHp) return false;
+        p.hp = Math.min(CONFIG.leaderHp, p.hp + CONFIG.medkitHeal);
+        return true;
+      case 'weapon':
+      case 'golden':
+        if (p.weapon === l.w) return false;
+        if (p.weapon !== 'pistol' && p.weapon !== 'golden') {
+          this.addLoot('weapon', p.x - Math.cos(p.angle) * 1.4, p.y - Math.sin(p.angle) * 1.4, p.weapon);
+        }
+        p.weapon = l.w;
+        p.ammo = WEAPONS[l.w].mag;
+        p.reload = 0;
+        p.cd = 0.2;
+        return true;
+      case 'he':
+      case 'flash':
+      case 'smoke':
+        if (p[l.kind] >= 1) return false;
+        p[l.kind] = 1;
+        return true;
+      default:
+        return false;
     }
   }
 
@@ -966,9 +911,13 @@ export class Game {
     this.fogOn = FOG_PHASES.has(this.phase);
     if (!this.fogOn) return;
     for (const team of ['T', 'CT']) {
-      const heads = [];
-      for (const p of this.players.values()) if (p.alive && p.team === team) heads.push(p.snake[0]);
-      computeVision(this.map, heads, this.smokes, this.vision[team]);
+      const sources = [];
+      for (const p of this.players.values()) {
+        if (!p.alive || p.team !== team) continue;
+        sources.push({ x: p.x, y: p.y, r: CONFIG.visionLeader });
+        for (const f of p.followers) sources.push({ x: f.x, y: f.y, r: CONFIG.visionFollower });
+      }
+      computeVision(this.map, sources, this.smokes, this.vision[team]);
     }
   }
 
@@ -976,100 +925,98 @@ export class Game {
     if (!this.fogOn || p.team === team) return true;
     const mask = this.vision[team];
     const w = this.map.width;
-    return p.snake.some((c) => mask[c.y * w + c.x] === 1);
+    if (mask[Math.round(p.y) * w + Math.round(p.x)]) return true;
+    return p.followers.some((f) => mask[Math.round(f.y) * w + Math.round(f.x)] === 1);
+  }
+
+  heardBy(team, p) {
+    if (!this.fogOn || !p.moving) return false;
+    for (const o of this.players.values()) {
+      if (o.alive && o.team === team && Math.hypot(o.x - p.x, o.y - p.y) <= CONFIG.hearRadius) return true;
+    }
+    return false;
   }
 
   viewFor(snap, team) {
     if (!this.fogOn || !team) return snap;
     if (![...this.players.values()].some((p) => p.alive && p.team === team)) return snap;
+    const noises = [];
+    const players = snap.p.map((sp) => {
+      if (sp.tm === team || !sp.a) return sp;
+      const p = this.players.get(sp.id);
+      if (!p || this.canSee(team, p)) return sp;
+      if ((this.tickCount + p.noiseSeed) % 6 === 0 && this.heardBy(team, p)) {
+        noises.push([r1(p.x + Math.random() * 2 - 1), r1(p.y + Math.random() * 2 - 1)]);
+      }
+      return { ...sp, s: [], h: 1 };
+    });
     const mask = this.vision[team];
     const w = this.map.width;
-    const seen = (x, y) => mask[y * w + x] === 1;
-    const enemy = team === 'T' ? 1 : 0;
-    const players = snap.p.map((p) => {
-      if (p.tm === team || !p.a) return p;
-      for (let i = 0; i < p.s.length; i += 2) if (seen(p.s[i], p.s[i + 1])) return p;
-      return { ...p, s: [], hb: 0, ac: null, h: 1 };
-    });
-    const bomb = { ...snap.bomb };
-    if (team === 'CT' && (bomb.s === 'ground' || bomb.s === 'carried') && !seen(bomb.x, bomb.y)) bomb.s = 'unknown';
+    const seen = (x, y) => mask[Math.round(y) * w + Math.round(x)] === 1;
     return {
       ...snap,
       p: players,
-      bu: snap.bu.filter((b) => b[5] !== enemy || seen(b[1], b[2]) || seen(b[3], b[4])),
-      gr: snap.gr.filter((g) => g[6] !== enemy || seen(g[2], g[3]) || seen(g[4], g[5])),
-      bomb,
+      gr: snap.gr.filter((g) => g[6] === (team === 'T' ? 0 : 1) || seen(g[2], g[3])),
+      ns: noises,
       fog: 1
     };
   }
 
   snapshot() {
-    const b = this.bomb;
-    const defuser = b.defuser ? this.players.get(b.defuser) : null;
     const players = [];
     for (const p of this.players.values()) {
+      const s = [];
+      if (p.alive) {
+        s.push(r1(p.x), r1(p.y));
+        for (const f of p.followers) s.push(r1(f.x), r1(f.y));
+      }
       players.push({
         id: p.id,
         n: p.name,
         b: p.bot ? 1 : 0,
         tm: p.team,
         a: p.alive ? 1 : 0,
-        s: flatten(p.snake),
-        d: p.dir,
-        mv: p.moved,
-        sq: p.spawnSeq,
-        $: p.money,
-        k: p.kills,
-        dt: p.deaths,
-        mvp: p.mvps,
-        ar: p.armor ? 1 : 0,
+        s,
+        an: r2(p.angle),
+        am: r2(p.aim),
+        ad: r1(p.aimDist),
+        hp: Math.max(0, Math.round(p.hp)),
+        w: p.weapon,
+        mg: p.ammo,
+        rl: r1(Math.max(0, p.reload)),
         he: p.he,
         fl: p.flash,
         sm: p.smoke,
-        kit: p.kit ? 1 : 0,
-        st: Math.round(p.stamina),
-        bo: p.boosting ? 1 : 0,
-        fx: p.flashed,
-        cd: p.fireCd,
-        ac: p.acting,
-        hb: p.hasBomb ? 1 : 0,
-        gb: p.growBy,
-        pg: p.ping,
-        rs: p.respawn,
-        sk: p.skin
+        k: p.kills,
+        dt: p.deaths,
+        dn: p.downs,
+        sh: p.shield > 0 ? 1 : 0,
+        fx: r1(Math.max(0, p.flashed)),
+        rs: r1(Math.max(0, p.respawn)),
+        mv: p.moving ? 1 : 0,
+        im: p.started ? 0 : 1,
+        sq: p.spawnSeq,
+        sk: p.skin,
+        pg: p.ping
       });
     }
     return {
       t: this.tickCount,
-      tk: this.tickMs,
+      tk: TICK_MS,
       ph: this.phase,
-      tm: this.timer,
-      rd: this.round,
+      tm: r1(Math.max(0, this.time)),
       sc: [this.score.T, this.score.CT],
-      wr: this.opts.winRounds,
+      goal: this.opts.scoreToWin,
       ts: this.opts.teamSize,
       p: players,
-      cr: flatten(this.crates),
-      pe: flatten(this.pellets),
-      bu: this.bullets.map((x) => [x.id, x.x, x.y, x.px, x.py, x.team === 'T' ? 0 : 1, x.done ? 1 : 0]),
-      gr: this.grenades.map((g) => [g.id, g.type, g.x, g.y, g.px, g.py, g.team === 'T' ? 0 : 1]),
-      sm: this.smokes.map((s) => [s.x, s.y, s.ttl]),
-      bomb: {
-        s: b.state,
-        x: b.x,
-        y: b.y,
-        c: b.carrier,
-        t: b.timer,
-        pp: b.plantProgress,
-        dp: b.defuseProgress,
-        dn: defuser && defuser.kit ? this.T.defuseKit : this.T.defuse,
-        site: b.site
-      },
-      rr: this.roundResult,
-      mw: this.matchWinner,
+      lt: this.loot.map((l) => [l.id, l.kind, l.w || '', r1(l.x), r1(l.y)]),
+      nb: this.newBullets,
+      gr: this.grenades.map((g) => [g.id, g.type, r2(g.x), r2(g.y), 0, 0, g.team === 'T' ? 0 : 1]),
+      sm: this.smokes.map((s) => [r1(s.x), r1(s.y), r1(s.ttl)]),
+      mw: this.winner,
       ev: this.events
     };
   }
 }
 
-Object.assign(Game.prototype, bots, combat, objectives);
+Object.assign(Game.prototype, bots);

@@ -1,6 +1,7 @@
-import { CONFIG, DIRS, ZONE, timings } from '../shared/config.js';
-import { parseMap } from '../shared/map.js';
+import { CONFIG, WEAPONS, ZONE } from '../shared/config.js';
+import { CALLOUTS, parseMap } from '../shared/map.js';
 import { computeVision } from '../shared/vision.js';
+import { WEAPON_KEYS } from '../shared/game.js';
 import { Fx } from './fx.js';
 import { skinById } from '../shared/skins.js';
 
@@ -9,43 +10,13 @@ export const TEAM_COLORS = {
   CT: { main: '#45b5ff', dark: '#0d3560', light: '#c4e9ff', glow: 'rgba(69,181,255,0.35)' }
 };
 
-const CALLOUTS = [
-  { x: 20.5, y: 2.5, text: 'LONG A' },
-  { x: 12, y: 14.5, text: 'MID' },
-  { x: 20.5, y: 26, text: 'TUNNELS B' },
-  { x: 26.5, y: 8, text: 'SHORT', vertical: true },
-  { x: 26.5, y: 22, text: 'SHORT', vertical: true },
-  { x: 42.5, y: 9, text: 'CT' }
-];
-
-export function cellsOf(flat) {
+export function soldiersOf(flat) {
   const out = [];
   for (let i = 0; i < flat.length; i += 2) out.push({ x: flat[i], y: flat[i + 1] });
   return out;
 }
 
-function samplePath(P, a, b) {
-  const at = (s) => {
-    const i = Math.max(0, Math.min(P.length - 1, Math.floor(s)));
-    const j = Math.min(P.length - 1, i + 1);
-    const f = s - Math.floor(s);
-    return { x: P[i].x + (P[j].x - P[i].x) * f, y: P[i].y + (P[j].y - P[i].y) * f };
-  };
-  const pts = [at(a)];
-  for (let i = Math.floor(a) + 1; i < b; i += 1) pts.push(P[i]);
-  if (b > a) pts.push(at(b));
-  return pts;
-}
-
-export function interpSnake(prev, curr, k, t) {
-  const n = curr.length;
-  if (!prev || !prev.length || k <= 0 || n === 0) return curr;
-  if (n > k && (curr[k].x !== prev[0].x || curr[k].y !== prev[0].y)) return curr;
-  let dropped = prev.slice(Math.max(0, n - k));
-  if (dropped.length > k + 1) dropped = dropped.slice(0, k);
-  const P = curr.concat(dropped);
-  return samplePath(P, (1 - t) * k, n - 1 + (1 - t) * dropped.length);
-}
+const LOOT_LETTER = { smg: 'SMG', rifle: 'AK', shotgun: 'POMPE', sniper: 'AWP', golden: 'GOLD' };
 
 function seeded(seed) {
   let s = seed >>> 0 || 1;
@@ -68,7 +39,7 @@ function bodyFill(ctx, skin, col, pts, c, now) {
   return g;
 }
 
-export function paintSnake(ctx, pts, c, { team, skin: skinId, dir, isSelf = false, armor = false, flashed = false, boosting = false }, now) {
+export function paintSnake(ctx, pts, c, { team, skin: skinId, angle = 0, aim = null, isSelf = false, shield = false, flashed = false }, now) {
   const col = TEAM_COLORS[team];
   const skin = skinById(skinId);
   const X = (v) => (v + 0.5) * c;
@@ -78,7 +49,7 @@ export function paintSnake(ctx, pts, c, { team, skin: skinId, dir, isSelf = fals
     for (let i = 1; i < pts.length; i += 1) {
       const a = pts[i - 1];
       const b = pts[i];
-      if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 1.5) ctx.moveTo(X(b.x), X(b.y));
+      if (Math.abs(a.x - b.x) + Math.abs(a.y - b.y) > 2.5) ctx.moveTo(X(b.x), X(b.y));
       else ctx.lineTo(X(b.x), X(b.y));
     }
   };
@@ -123,14 +94,26 @@ export function paintSnake(ctx, pts, c, { team, skin: skinId, dir, isSelf = fals
   const h = pts[0];
   const hx = X(h.x);
   const hy = X(h.y);
-  const f = DIRS[dir];
+  const f = { x: Math.cos(angle), y: Math.sin(angle) };
   const r = c * 0.47;
 
-  if (boosting) {
-    ctx.fillStyle = col.glow;
+  if (aim !== null) {
+    const ax = Math.cos(aim);
+    const ay = Math.sin(aim);
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = '#15191c';
+    ctx.lineWidth = c * 0.24;
     ctx.beginPath();
-    ctx.arc(hx, hy, r * 1.6, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx + ax * r * 1.75, hy + ay * r * 1.75);
+    ctx.stroke();
+    ctx.strokeStyle = '#5b666d';
+    ctx.lineWidth = c * 0.08;
+    ctx.beginPath();
+    ctx.moveTo(hx + ax * r * 0.8, hy + ay * r * 0.8);
+    ctx.lineTo(hx + ax * r * 1.7, hy + ay * r * 1.7);
+    ctx.stroke();
+    ctx.lineCap = 'round';
   }
   if (isSelf) {
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -147,15 +130,11 @@ export function paintSnake(ctx, pts, c, { team, skin: skinId, dir, isSelf = fals
   ctx.arc(hx, hy, r * 0.82, 0, Math.PI * 2);
   ctx.fill();
 
-  if (armor) {
-    const ang = Math.atan2(f.y, f.x);
-    ctx.strokeStyle = '#3d4a52';
-    ctx.lineWidth = c * 0.2;
+  if (shield) {
+    ctx.strokeStyle = 'rgba(160,230,255,0.75)';
+    ctx.lineWidth = Math.max(1.5, c * 0.07);
     ctx.beginPath();
-    ctx.arc(hx, hy, r * 0.78, ang + Math.PI * 0.55, ang + Math.PI * 1.45);
-    ctx.stroke();
-    ctx.strokeStyle = '#8fa3ae';
-    ctx.lineWidth = c * 0.07;
+    ctx.arc(hx, hy, r * 1.55, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -209,7 +188,7 @@ export function drawSkinPreview(canvas, skinId, team, now) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   ctx.translate((w - 6 * c) / 2, (h - 3 * c) / 2);
-  paintSnake(ctx, PREVIEW_PATH, c, { team, skin: skinId, dir: 1 }, now);
+  paintSnake(ctx, PREVIEW_PATH, c, { team, skin: skinId, angle: 0 }, now);
 }
 
 export class Renderer {
@@ -223,8 +202,7 @@ export class Renderer {
     this.fx = new Fx();
     this.smokeCache = new Map();
     this.lastPaths = new Map();
-    this.T = timings();
-    this.tickMs = 0;
+    this.bullets = [];
     const { width, height } = this.map;
     const n = width * height;
     this.fogCanvas = document.createElement('canvas');
@@ -237,17 +215,16 @@ export class Renderer {
     this.fogShown = new Float32Array(n);
     this.visMask = new Uint8Array(n).fill(1);
     this.fogTick = -1;
+    this.pings = [];
   }
 
   isWall(x, y) {
     const { width, height, wall } = this.map;
     return x < 0 || y < 0 || x >= width || y >= height || wall[y * width + x] === 1;
   }
-
   visible(x, y) {
     return this.visMask[y * this.map.width + x] === 1;
   }
-
   updateFog(curr, team) {
     if (curr.t === this.fogTick) return;
     this.fogTick = curr.t;
@@ -257,9 +234,14 @@ export class Renderer {
       this.fogTo.fill(0);
       return;
     }
-    const heads = curr.p.filter((p) => p.tm === team && p.a && p.s.length).map((p) => ({ x: p.s[0], y: p.s[1] }));
+    const sources = [];
+    for (const p of curr.p) {
+      if (p.tm !== team || !p.a || !p.s.length) continue;
+      sources.push({ x: p.s[0], y: p.s[1], r: CONFIG.visionLeader });
+      for (let i = 2; i < p.s.length; i += 2) sources.push({ x: p.s[i], y: p.s[i + 1], r: CONFIG.visionFollower });
+    }
     const smokes = curr.sm.map(([x, y]) => ({ x, y, r: CONFIG.smokeRadius }));
-    computeVision(this.map, heads, smokes, this.visMask);
+    computeVision(this.map, sources, smokes, this.visMask);
     for (let i = 0; i < this.visMask.length; i += 1) this.fogTo[i] = this.visMask[i] ? 0 : 0.8;
   }
 
@@ -285,23 +267,27 @@ export class Renderer {
     ctx.drawImage(this.fogCanvas, 0, 0, width * this.cell, height * this.cell);
     if ('filter' in ctx) ctx.filter = 'none';
   }
-
-  predictSnake(cells, { dir, k, gb }, t) {
-    const D = DIRS[dir];
-    const future = [];
-    let { x, y } = cells[0];
-    for (let i = 0; i < k; i += 1) {
-      x += D.x;
-      y += D.y;
-      if (this.isWall(x, y)) break;
-      future.unshift({ x, y });
-    }
-    const kk = future.length;
-    if (!kk) return cells;
-    const grow = Math.min(gb, kk);
-    return samplePath(future.concat(cells), (1 - t) * kk, cells.length - 1 + kk - t * (kk - grow));
+  ping(x, y, kind) {
+    if (document.hidden || this.pings.length > 40) return;
+    this.pings.push({ x, y, kind, life: kind === 'shot' ? 0.9 : 1.1, max: kind === 'shot' ? 0.9 : 1.1 });
   }
-
+  drawPings(dt) {
+    const ctx = this.ctx;
+    const c = this.cell;
+    for (const p of this.pings) {
+      p.life -= dt;
+      const k = 1 - p.life / p.max;
+      const shot = p.kind === 'shot';
+      ctx.globalAlpha = Math.max(0, 1 - k) * (shot ? 0.9 : 0.7);
+      ctx.strokeStyle = shot ? '#ffb347' : '#ff4b3a';
+      ctx.lineWidth = Math.max(1.5, c * (shot ? 0.12 : 0.08));
+      ctx.beginPath();
+      ctx.arc((p.x + 0.5) * c, (p.y + 0.5) * c, c * (0.3 + k * (shot ? 1.6 : 1.1)), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    this.pings = this.pings.filter((p) => p.life > 0);
+  }
   resize(cssW, cssH) {
     const { width, height } = this.map;
     const cell = Math.max(6, Math.min(cssW / width, cssH / height));
@@ -317,7 +303,6 @@ export class Renderer {
     this.canvas.height = Math.floor(h * dpr);
     this.staticLayer = null;
   }
-
   buildStatic() {
     const { width, height, wall, zone } = this.map;
     const c = this.cell;
@@ -389,7 +374,7 @@ export class Renderer {
       ctx.strokeRect(x0 + 2, y0 + 2, x1 - x0 - 4, y1 - y0 - 4);
       ctx.setLineDash([]);
       ctx.save();
-      ctx.translate(30.6 * c, (site === 'A' ? 6.4 : 22.6) * c);
+      ctx.translate(x0 + c * 1.5, (y0 + y1) / 2 + c * 0.3);
       ctx.rotate(-0.08);
       ctx.fillStyle = 'rgba(160,25,15,0.38)';
       ctx.font = `${Math.round(c * 3.4)}px "Black Ops One", system-ui`;
@@ -410,10 +395,19 @@ export class Renderer {
       ctx.fillText(co.text, 0, 0);
       ctx.restore();
     }
-    ctx.fillStyle = 'rgba(150,50,20,0.4)';
-    ctx.fillText('T SPAWN', 5 * c, 19.6 * c);
-    ctx.fillStyle = 'rgba(20,80,150,0.4)';
-    ctx.fillText('CT SPAWN', 43 * c, 19.6 * c);
+    for (const [z, label, color] of [[ZONE.T, 'T SPAWN', 'rgba(150,50,20,0.4)'], [ZONE.CT, 'CT SPAWN', 'rgba(20,80,150,0.4)']]) {
+      let sx = 0;
+      let n = 0;
+      let maxY = 0;
+      for (let i = 0; i < zone.length; i += 1) {
+        if (zone[i] !== z) continue;
+        sx += i % width;
+        n += 1;
+        maxY = Math.max(maxY, Math.floor(i / width));
+      }
+      ctx.fillStyle = color;
+      ctx.fillText(label, (sx / n + 0.5) * c, (maxY + 1.6) * c);
+    }
 
     const isWall = (x, y) => x < 0 || y < 0 || x >= width || y >= height || wall[y * width + x] === 1;
     ctx.fillStyle = 'rgba(40,22,5,0.32)';
@@ -453,314 +447,271 @@ export class Renderer {
 
     this.staticLayer = layer;
   }
+  toCell(clientX, clientY) {
+    const r = this.canvas.getBoundingClientRect();
+    return { x: (clientX - r.left) / this.cell - 0.5, y: (clientY - r.top) / this.cell - 0.5 };
+  }
 
-  snakePaths(prev, curr, t, predict) {
+  drawAim(aim) {
+    const ctx = this.ctx;
+    const c = this.cell;
+    const hx = (aim.head.x + 0.5) * c;
+    const hy = (aim.head.y + 0.5) * c;
+    const len = Math.min(Math.max(aim.dist, 2), 10) * c;
+    const ax = Math.cos(aim.angle);
+    const ay = Math.sin(aim.angle);
+    ctx.save();
+    ctx.setLineDash([c * 0.25, c * 0.35]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = Math.max(1, c * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(hx + ax * c * 0.9, hy + ay * c * 0.9);
+    ctx.lineTo(hx + ax * len, hy + ay * len);
+    ctx.stroke();
+    ctx.restore();
+    if (!aim.target) return;
+    const x = (aim.target.x + 0.5) * c;
+    const y = (aim.target.y + 0.5) * c;
+    const g = c * 0.28;
+    const cross = () => {
+      ctx.beginPath();
+      ctx.moveTo(x - g * 2.2, y);
+      ctx.lineTo(x - g, y);
+      ctx.moveTo(x + g, y);
+      ctx.lineTo(x + g * 2.2, y);
+      ctx.moveTo(x, y - g * 2.2);
+      ctx.lineTo(x, y - g);
+      ctx.moveTo(x, y + g);
+      ctx.lineTo(x, y + g * 2.2);
+      ctx.stroke();
+    };
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = Math.max(3, c * 0.14);
+    cross();
+    ctx.strokeStyle = '#7dff7a';
+    ctx.lineWidth = Math.max(1.5, c * 0.07);
+    cross();
+  }
+
+  addBullets(list) {
+    if (document.hidden) return;
+    const delay = 0.05;
+    for (const [id, x, y, a, speed, range, team, wi] of list) {
+      const w = WEAPONS[WEAPON_KEYS[wi]] || WEAPONS.pistol;
+      this.bullets.push({ id, x, y, vx: Math.cos(a), vy: Math.sin(a), speed, range, team, color: w.color, delay, age: 0 });
+    }
+    if (this.bullets.length > 400) this.bullets.splice(0, this.bullets.length - 400);
+  }
+
+  hitBullet(id, x, y) {
+    const i = this.bullets.findIndex((b) => b.id === id);
+    if (i >= 0) this.bullets.splice(i, 1);
+    this.fx.burst(x, y, { n: 4, color: ['#fff3c4', '#ffd27a'], speed: 4, life: 0.18, size: 0.08 });
+  }
+
+  updateBullets(dt) {
+    for (const b of this.bullets) {
+      if (b.delay > 0) {
+        b.delay -= dt;
+        continue;
+      }
+      let travel = b.speed * dt;
+      b.age += dt;
+      while (travel > 0 && !b.dead) {
+        const step = Math.min(0.25, travel);
+        travel -= step;
+        b.x += b.vx * step;
+        b.y += b.vy * step;
+        b.range -= step;
+        if (this.isWall(Math.round(b.x), Math.round(b.y))) {
+          b.dead = true;
+          this.fx.burst(b.x - b.vx * 0.2, b.y - b.vy * 0.2, { n: 3, color: ['#e9d7a8', '#9b8a6a'], speed: 3, life: 0.2, size: 0.07 });
+        } else if (b.range <= 0) {
+          b.dead = true;
+        }
+      }
+    }
+    this.bullets = this.bullets.filter((b) => !b.dead);
+  }
+
+  drawBullets() {
+    const ctx = this.ctx;
+    const c = this.cell;
+    ctx.lineCap = 'round';
+    for (const b of this.bullets) {
+      if (b.delay > 0) continue;
+      const tail = Math.min(0.9, b.age * b.speed);
+      const x1 = (b.x + 0.5) * c;
+      const y1 = (b.y + 0.5) * c;
+      const x0 = (b.x - b.vx * tail + 0.5) * c;
+      const y0 = (b.y - b.vy * tail + 0.5) * c;
+      const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(1, b.color);
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = Math.max(1.5, c * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    }
+  }
+
+  squadPoints(prev, curr, t) {
     const prevById = new Map(prev ? prev.p.map((p) => [p.id, p]) : []);
     const out = new Map();
     for (const p of curr.p) {
       if (!p.a || !p.s.length) continue;
-      const cells = cellsOf(p.s);
+      const cur = soldiersOf(p.s);
       const pp = prevById.get(p.id);
-      let pts;
-      if (predict && predict.id === p.id) pts = this.predictSnake(cells, predict, t);
-      else pts = pp && pp.a && pp.sq === p.sq ? interpSnake(cellsOf(pp.s), cells, p.mv, t) : cells;
-      out.set(p.id, pts);
+      if (pp && pp.a && pp.sq === p.sq && pp.s.length) {
+        const old = soldiersOf(pp.s);
+        for (let i = 0; i < cur.length; i += 1) {
+          const o = old[i];
+          if (!o || Math.hypot(o.x - cur[i].x, o.y - cur[i].y) > 2) continue;
+          cur[i] = { x: o.x + (cur[i].x - o.x) * t, y: o.y + (cur[i].y - o.y) * t };
+        }
+      }
+      out.set(p.id, cur);
     }
     this.lastPaths = out;
     return out;
   }
 
-  draw({ prev, curr, t, selfId, now, dt, predict }) {
+  drawSquad(p, pts, isSelf, now) {
     const ctx = this.ctx;
     const c = this.cell;
-    if (!this.staticLayer) this.buildStatic();
-    this.fx.update(dt);
-
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    const sx = (Math.random() - 0.5) * this.fx.shake;
-    const sy = (Math.random() - 0.5) * this.fx.shake;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, sx * this.dpr, sy * this.dpr);
-    ctx.drawImage(this.staticLayer, 0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
-    if (!curr) return;
-    if (curr.tk !== this.tickMs) {
-      this.tickMs = curr.tk;
-      this.T = timings(curr.tk);
-    }
-
-    const paths = this.snakePaths(prev, curr, t, predict);
-    const self = curr.p.find((p) => p.id === selfId);
-    const team = self ? self.tm : null;
-    this.updateFog(curr, team);
-
-    this.drawBombZone(curr, now);
-    this.drawPellets(curr.pe, now);
-    this.drawCrates(curr.cr, now);
-    this.fx.drawBelow(ctx, c);
-    if (curr.bomb.s === 'ground') this.drawBomb(curr, now);
-
-    const ordered = [...curr.p].sort((a, b) => (a.id === selfId) - (b.id === selfId));
-    for (const p of ordered) {
-      const pts = paths.get(p.id);
-      if (pts) this.drawSnake(p, pts, p.id === selfId, now);
-    }
-
-    this.drawBullets(curr.bu, t);
-    this.drawGrenades(curr.gr, t, now);
-    this.fx.drawAbove(ctx, c);
-    this.drawSmokes(curr.sm, now);
-    this.drawFog(t);
-    if (curr.bomb.s === 'planted' || (curr.bomb.s === 'ground' && team === 'T')) this.drawBomb(curr, now);
-
-    const compact = c < 13;
-    for (const p of curr.p) {
-      const pts = paths.get(p.id);
-      if (!pts) continue;
-      if (compact && p.id !== selfId && !p.hb && !p.ac) continue;
-      if (p.tm !== team && !this.visible(p.s[0], p.s[1])) continue;
-      this.drawTag(p, pts[0], p.id === selfId, curr, now);
-    }
-    this.fx.drawTexts(ctx, c);
-    if (self && self.a && curr.ph === 'freeze') {
-      const pts = paths.get(self.id);
-      if (pts) this.drawYou(pts[0], now);
-    }
-  }
-
-  drawSnake(p, pts, isSelf, now) {
-    const c = this.cell;
-    paintSnake(this.ctx, pts, c, {
-      team: p.tm,
-      skin: p.sk,
-      dir: p.d,
-      isSelf,
-      armor: p.ar,
-      flashed: p.fx > 0,
-      boosting: p.bo
-    }, now);
-    if (p.hb && pts.length > 1) {
-      const b = pts[Math.min(2, pts.length - 1)];
-      this.drawC4((b.x + 0.5) * c, (b.y + 0.5) * c, c * 0.55, now, 500);
-    }
-  }
-
-  drawC4(x, y, size, now, period) {
-    const ctx = this.ctx;
-    ctx.fillStyle = '#2b2d1f';
-    ctx.fillRect(x - size / 2, y - size * 0.32, size, size * 0.64);
-    ctx.fillStyle = '#6b6f45';
-    ctx.fillRect(x - size * 0.42, y - size * 0.24, size * 0.84, size * 0.48);
-    ctx.fillStyle = '#1b1c12';
-    ctx.fillRect(x - size * 0.3, y - size * 0.14, size * 0.4, size * 0.28);
-    const on = Math.floor(now / period) % 2 === 0;
-    ctx.fillStyle = on ? '#ff2a1a' : '#5a1510';
-    ctx.beginPath();
-    ctx.arc(x + size * 0.25, y, size * 0.1, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  drawTag(p, h, isSelf, curr, now) {
-    const ctx = this.ctx;
-    const c = this.cell;
-    const x = (h.x + 0.5) * c;
-    const y = (h.y + 0.5) * c;
     const col = TEAM_COLORS[p.tm];
-
-    if (p.ac) {
-      const b = curr.bomb;
-      const k = p.ac === 'plant' ? b.pp / this.T.plant : b.dp / b.dn;
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-      ctx.lineWidth = c * 0.22;
-      ctx.beginPath();
-      ctx.arc(x, y, c * 0.95, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = p.ac === 'plant' ? '#ff4b2b' : '#4bd2ff';
-      ctx.beginPath();
-      ctx.arc(x, y, c * 0.95, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, k));
-      ctx.stroke();
-    }
-
-    const label = p.n;
-    ctx.font = `700 ${Math.max(9, Math.round(c * 0.42))}px "Space Mono", monospace`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    const ty = y - c * 0.7;
-    const w = ctx.measureText(label).width + 8;
-    ctx.fillStyle = 'rgba(10,14,18,0.55)';
-    ctx.fillRect(x - w / 2, ty - c * 0.5, w, c * 0.52);
-    ctx.fillStyle = isSelf ? '#ffe46b' : col.light;
-    ctx.fillText(label, x, ty);
-    if (p.ar || p.hb) {
-      const icons = `${p.ar ? '🛡' : ''}${p.hb ? '💣' : ''}`;
-      ctx.font = `${Math.max(9, Math.round(c * 0.38))}px system-ui`;
-      ctx.fillText(icons, x + w / 2 + c * 0.35, ty);
-    }
-  }
-
-  drawYou(h, now) {
-    const ctx = this.ctx;
-    const c = this.cell;
-    const x = (h.x + 0.5) * c;
-    const y = (h.y + 0.5) * c - c * 1.7 - Math.abs(Math.sin(now / 180)) * c * 0.4;
-    ctx.fillStyle = '#ffe46b';
-    ctx.beginPath();
-    ctx.moveTo(x - c * 0.35, y - c * 0.3);
-    ctx.lineTo(x + c * 0.35, y - c * 0.3);
-    ctx.lineTo(x, y + c * 0.15);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  drawPellets(flat, now) {
-    const ctx = this.ctx;
-    const c = this.cell;
-    for (let i = 0; i < flat.length; i += 2) {
-      const x = (flat[i] + 0.5) * c;
-      const y = (flat[i + 1] + 0.5) * c;
-      const pulse = 1 + Math.sin(now / 200 + i) * 0.15;
-      ctx.fillStyle = 'rgba(255,240,150,0.28)';
-      ctx.beginPath();
-      ctx.arc(x, y, c * 0.3 * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fff3a8';
-      ctx.beginPath();
-      ctx.arc(x, y, c * 0.13, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  drawCrates(flat, now) {
-    const ctx = this.ctx;
-    const c = this.cell;
-    for (let i = 0; i < flat.length; i += 2) {
-      const bob = Math.sin(now / 300 + i) * c * 0.05;
-      const s = c * 0.78;
-      const x = (flat[i] + 0.5) * c - s / 2;
-      const y = (flat[i + 1] + 0.5) * c - s / 2 + bob;
-      ctx.fillStyle = 'rgba(40,20,0,0.3)';
-      ctx.fillRect(x + c * 0.12, y + c * 0.16, s, s);
-      ctx.fillStyle = '#b37a3a';
-      ctx.fillRect(x, y, s, s);
-      ctx.strokeStyle = '#5e3a14';
-      ctx.lineWidth = Math.max(1.5, c * 0.07);
-      ctx.strokeRect(x, y, s, s);
+    paintSnake(ctx, pts, c, { team: p.tm, skin: p.sk, angle: p.an, aim: p.am, isSelf, shield: p.sh, flashed: p.fx > 0 }, now);
+    const ax = pts[0].x + Math.cos(p.am) * Math.max(3, p.ad || 6);
+    const ay = pts[0].y + Math.sin(p.am) * Math.max(3, p.ad || 6);
+    for (let i = 1; i < pts.length; i += 1) {
+      const s = pts[i];
+      const x = (s.x + 0.5) * c;
+      const y = (s.y + 0.5) * c;
+      const a = Math.atan2(ay - s.y, ax - s.x);
+      ctx.strokeStyle = '#15191c';
+      ctx.lineWidth = c * 0.16;
+      ctx.lineCap = 'butt';
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineTo(x + s, y + s);
-      ctx.moveTo(x + s, y);
-      ctx.lineTo(x, y + s);
+      ctx.lineTo(x + Math.cos(a) * c * 0.55, y + Math.sin(a) * c * 0.55);
       ctx.stroke();
-      ctx.fillStyle = '#ffe07a';
-      ctx.fillRect(x + s * 0.35, y + s * 0.35, s * 0.3, s * 0.3);
+      ctx.lineCap = 'round';
+      ctx.fillStyle = col.dark;
+      ctx.beginPath();
+      ctx.arc(x, y, c * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = col.light;
+      ctx.beginPath();
+      ctx.arc(x, y, c * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = col.main;
+      ctx.beginPath();
+      ctx.arc(x - c * 0.05, y - c * 0.06, c * 0.12, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
-  drawBombZone(curr, now) {
-    const b = curr.bomb;
-    if (b.s !== 'planted') return;
+  drawTag(p, h, isSelf) {
     const ctx = this.ctx;
     const c = this.cell;
-    const urgency = 1 - b.t / this.T.bomb;
-    const pulse = 0.5 + Math.sin(now / (120 - urgency * 80)) * 0.5;
-    ctx.fillStyle = `rgba(255,40,20,${0.04 + urgency * 0.12 * pulse})`;
-    ctx.beginPath();
-    ctx.arc((b.x + 0.5) * c, (b.y + 0.5) * c, CONFIG.bombRadius * c, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.setLineDash([c * 0.5, c * 0.35]);
-    ctx.strokeStyle = `rgba(255,40,20,${0.25 + urgency * 0.5})`;
-    ctx.lineWidth = Math.max(1.5, c * 0.08);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    const col = TEAM_COLORS[p.tm];
+    const x = (h.x + 0.5) * c;
+    const y = (h.y + 0.5) * c;
+    const bw = c * 1.4;
+    const by = y - c * 0.95;
+    ctx.fillStyle = 'rgba(10,14,18,0.7)';
+    ctx.fillRect(x - bw / 2 - 1, by - 1, bw + 2, c * 0.16 + 2);
+    const ratio = Math.max(0, Math.min(1, p.hp / CONFIG.leaderHp));
+    ctx.fillStyle = ratio > 0.5 ? '#7dff7a' : ratio > 0.25 ? '#ffd25e' : '#ff4b3a';
+    ctx.fillRect(x - bw / 2, by, bw * ratio, c * 0.16);
+    ctx.font = `700 ${Math.max(9, Math.round(c * 0.4))}px "Space Mono", monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(10,14,18,0.6)';
+    const label = `${p.n} · ${p.s.length / 2}`;
+    const tw = ctx.measureText(label).width + 8;
+    ctx.fillRect(x - tw / 2, by - c * 0.55, tw, c * 0.5);
+    ctx.fillStyle = isSelf ? '#ffe46b' : col.light;
+    ctx.fillText(label, x, by - c * 0.08);
   }
 
-  drawBomb(curr, now) {
-    const b = curr.bomb;
+  drawLoot(list, now) {
+    const ctx = this.ctx;
     const c = this.cell;
-    const x = (b.x + 0.5) * c;
-    const y = (b.y + 0.5) * c;
-    if (b.s === 'ground') {
-      const pulse = 1 + Math.sin(now / 160) * 0.2;
-      this.ctx.fillStyle = 'rgba(255,220,80,0.3)';
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, c * 0.8 * pulse, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.drawC4(x, y, c * 0.85, now, 700);
-    } else if (b.s === 'planted') {
-      const period = Math.max(60, (b.t / this.T.bomb) * 500);
-      const glow = Math.floor(now / period) % 2 === 0;
-      if (glow) {
-        this.ctx.fillStyle = 'rgba(255,40,20,0.35)';
-        this.ctx.beginPath();
-        this.ctx.arc(x, y, c * 0.9, 0, Math.PI * 2);
-        this.ctx.fill();
+    for (const [id, kind, w, lx, ly] of list) {
+      const bob = Math.sin(now / 280 + id) * c * 0.06;
+      const x = (lx + 0.5) * c;
+      const y = (ly + 0.5) * c + bob;
+      const glow = kind === 'golden' ? 'rgba(255,210,94,0.45)' : kind === 'medkit' ? 'rgba(255,90,90,0.25)' : 'rgba(255,255,255,0.18)';
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, y, c * (kind === 'golden' ? 0.95 + Math.sin(now / 150) * 0.12 : 0.55), 0, Math.PI * 2);
+      ctx.fill();
+      if (kind === 'recruit' || kind === 'tag') {
+        ctx.fillStyle = kind === 'tag' ? '#b8c2c9' : '#e8f4ff';
+        ctx.beginPath();
+        ctx.arc(x, y, c * (kind === 'tag' ? 0.24 : 0.3), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#1f7a3a';
+        ctx.lineWidth = Math.max(2, c * 0.1);
+        ctx.beginPath();
+        ctx.moveTo(x - c * 0.15, y);
+        ctx.lineTo(x + c * 0.15, y);
+        ctx.moveTo(x, y - c * 0.15);
+        ctx.lineTo(x, y + c * 0.15);
+        ctx.stroke();
+      } else if (kind === 'medkit') {
+        ctx.fillStyle = '#f4f4f4';
+        ctx.fillRect(x - c * 0.32, y - c * 0.26, c * 0.64, c * 0.52);
+        ctx.fillStyle = '#e23b2a';
+        ctx.fillRect(x - c * 0.07, y - c * 0.2, c * 0.14, c * 0.4);
+        ctx.fillRect(x - c * 0.2, y - c * 0.07, c * 0.4, c * 0.14);
+      } else if (kind === 'weapon' || kind === 'golden') {
+        const wc = WEAPONS[w] ? WEAPONS[w].color : '#ccc';
+        ctx.fillStyle = '#20262b';
+        ctx.fillRect(x - c * 0.42, y - c * 0.13, c * 0.84, c * 0.26);
+        ctx.fillRect(x - c * 0.1, y, c * 0.16, c * 0.3);
+        ctx.fillStyle = wc;
+        ctx.fillRect(x - c * 0.38, y - c * 0.09, c * 0.5, c * 0.12);
+        ctx.font = `700 ${Math.max(8, Math.round(c * 0.34))}px "Black Ops One", system-ui`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = wc;
+        ctx.fillText(LOOT_LETTER[w] || '', x, y - c * 0.22);
+      } else {
+        const colors = { he: '#4f6b2f', flash: '#e9eef0', smoke: '#8c959b' };
+        ctx.fillStyle = colors[kind] || '#888';
+        ctx.strokeStyle = '#1d2226';
+        ctx.lineWidth = Math.max(1, c * 0.05);
+        ctx.beginPath();
+        ctx.arc(x, y, c * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#1d2226';
+        ctx.fillRect(x - c * 0.06, y - c * 0.34, c * 0.12, c * 0.12);
       }
-      this.ctx.strokeStyle = 'rgba(255,60,30,0.9)';
-      this.ctx.lineWidth = Math.max(1.5, c * 0.08);
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, c * 0.75, 0, Math.PI * 2);
-      this.ctx.stroke();
-      this.drawC4(x, y, c * 1.05, now, period);
     }
   }
 
-  drawBullets(list, t) {
+  drawGrenades(prev, curr, t) {
     const ctx = this.ctx;
     const c = this.cell;
-    ctx.lineCap = 'round';
-    for (const [, x, y, px, py, team, done] of list) {
-      if (done && t >= 1) continue;
-      const k = Math.min(1, t);
-      const cx = px + (x - px) * k;
-      const cy = py + (y - py) * k;
-      const dx = Math.sign(x - px);
-      const dy = Math.sign(y - py);
-      const tail = Math.min(1.8, Math.abs(x - px) + Math.abs(y - py)) * Math.max(0.4, k);
-      const x1 = (cx + 0.5) * c;
-      const y1 = (cy + 0.5) * c;
-      const x0 = (cx - dx * tail + 0.5) * c;
-      const y0 = (cy - dy * tail + 0.5) * c;
-      const grad = ctx.createLinearGradient(x0, y0, x1, y1);
-      grad.addColorStop(0, 'rgba(255,240,170,0)');
-      grad.addColorStop(1, team === 0 ? '#ffd27a' : '#bfefff');
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = c * 0.18;
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x1, y1);
-      ctx.stroke();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(x1, y1, c * 0.11, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  drawGrenades(list, t, now) {
-    const ctx = this.ctx;
-    const c = this.cell;
+    const old = new Map(prev ? prev.gr.map((g) => [g[0], g]) : []);
     const colors = { he: '#4f6b2f', flash: '#e9eef0', smoke: '#8c959b' };
-    for (const [, type, x, y, px, py] of list) {
-      const cx = (px + (x - px) * t + 0.5) * c;
-      const cy = (py + (y - py) * t + 0.5) * c;
-      const moving = x !== px || y !== py;
-      const lift = moving ? Math.sin(t * Math.PI) * c * 0.35 : 0;
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      ctx.beginPath();
-      ctx.arc(cx + c * 0.1, cy + c * 0.15, c * 0.18, 0, Math.PI * 2);
-      ctx.fill();
+    for (const g of curr.gr) {
+      const [id, type, x, y] = g;
+      const o = old.get(id);
+      const gx = o ? o[2] + (x - o[2]) * t : x;
+      const gy = o ? o[3] + (y - o[3]) * t : y;
       ctx.fillStyle = colors[type];
       ctx.strokeStyle = '#1d2226';
       ctx.lineWidth = Math.max(1, c * 0.05);
       ctx.beginPath();
-      ctx.arc(cx, cy - lift, c * 0.22, 0, Math.PI * 2);
+      ctx.arc((gx + 0.5) * c, (gy + 0.5) * c, c * 0.2, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      if (!moving && Math.floor(now / 90) % 2 === 0) {
-        ctx.fillStyle = type === 'he' ? '#ff3b1f' : '#fff';
-        ctx.beginPath();
-        ctx.arc(cx, cy, c * 0.08, 0, Math.PI * 2);
-        ctx.fill();
-      }
     }
   }
 
@@ -781,9 +732,9 @@ export class Renderer {
         }
         this.smokeCache.set(key, puffs);
       }
-      const age = this.T.smoke - ttl;
-      const grow = Math.min(1, age / (this.T.smoke * 0.1));
-      const fade = Math.min(1, ttl / (this.T.smoke * 0.17));
+      const age = CONFIG.smokeTime - ttl;
+      const grow = Math.min(1, age / 1.2);
+      const fade = Math.min(1, ttl / 2.4);
       for (const pf of this.smokeCache.get(key)) {
         const wob = Math.sin(now / 900 + pf.ph) * 0.15;
         const px = (x + pf.dx * grow + wob + 0.5) * c;
@@ -800,5 +751,47 @@ export class Renderer {
       }
     }
     for (const key of this.smokeCache.keys()) if (!seen.has(key)) this.smokeCache.delete(key);
+  }
+  draw({ prev, curr, t, selfId, now, dt, aim }) {
+    const ctx = this.ctx;
+    const c = this.cell;
+    if (!this.staticLayer) this.buildStatic();
+    this.fx.update(dt);
+    this.updateBullets(dt);
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    const sx = (Math.random() - 0.5) * this.fx.shake;
+    const sy = (Math.random() - 0.5) * this.fx.shake;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, sx * this.dpr, sy * this.dpr);
+    ctx.drawImage(this.staticLayer, 0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
+    if (!curr) return;
+
+    const squads = this.squadPoints(prev, curr, t);
+    const self = curr.p.find((p) => p.id === selfId);
+    const team = self ? self.tm : null;
+    this.updateFog(curr, team);
+
+    this.drawLoot(curr.lt, now);
+    this.fx.drawBelow(ctx, c);
+    const ordered = [...curr.p].sort((a, b) => (a.id === selfId) - (b.id === selfId));
+    for (const p of ordered) {
+      const pts = squads.get(p.id);
+      if (pts) this.drawSquad(p, pts, p.id === selfId, now);
+    }
+    this.drawBullets();
+    this.drawGrenades(prev, curr, t);
+    this.fx.drawAbove(ctx, c);
+    this.drawSmokes(curr.sm, now);
+    this.drawFog(t);
+    this.drawPings(dt);
+    for (const p of curr.p) {
+      const pts = squads.get(p.id);
+      if (!pts) continue;
+      if (p.tm !== team && !this.visible(Math.round(pts[0].x), Math.round(pts[0].y))) continue;
+      this.drawTag(p, pts[0], p.id === selfId);
+    }
+    this.fx.drawTexts(ctx, c);
+    if (aim && self && self.a) this.drawAim(aim);
   }
 }

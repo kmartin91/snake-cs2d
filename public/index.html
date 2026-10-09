@@ -7,10 +7,10 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Snake CS2D" />
+    <meta name="apple-mobile-web-app-title" content="Snake Strike" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <title>Snake CS2D</title>
+    <title>Snake Strike</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%90%8D%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -26,14 +26,12 @@
           <div class="team t">
             <span class="side">T</span>
             <strong id="scoreT">0</strong>
-            <div class="dots" id="dotsT"></div>
           </div>
           <div class="clock">
             <div id="timer">0:00</div>
             <div id="phase">—</div>
           </div>
           <div class="team ct">
-            <div class="dots" id="dotsCT"></div>
             <strong id="scoreCT">0</strong>
             <span class="side">CT</span>
           </div>
@@ -52,17 +50,11 @@
         </div>
 
         <div id="status">
-          <div class="stat len" title="Longueur = vie + munitions"><span>❤</span><b id="len">0</b></div>
-          <div class="stat stamina" title="Sprint (Shift)"><span>⚡</span><div class="bar"><i id="staminaBar"></i></div></div>
-          <div class="stat money"><b id="money">$0</b></div>
+          <div class="stat hp"><span>❤</span><div class="bar"><i id="hpBar"></i></div><b id="hp">100</b></div>
+          <div class="stat squad" title="Taille de l'escouade"><span>🐍</span><b id="squad">3</b></div>
+          <div class="stat ammo" title="R pour recharger"><span id="weaponName">Pistolet</span><b id="ammo">12/12</b></div>
           <div class="items" id="items"></div>
         </div>
-
-        <section id="buyMenu" class="panel hidden">
-          <header><h2>Armurerie</h2><span id="buyMoney">$0</span></header>
-          <div id="buyList"></div>
-          <p class="muted">Touches 1–6 ou clic · B pour fermer</p>
-        </section>
 
         <section id="scoreboard" class="panel hidden"></section>
 
@@ -81,30 +73,23 @@
         <div id="flash"></div>
 
         <section id="touch" aria-label="Contrôles tactiles">
-          <div class="dpad">
-            <button data-dir="0" class="t-up">▲</button>
-            <button data-dir="3" class="t-left">◀</button>
-            <button data-dir="1" class="t-right">▶</button>
-            <button data-dir="2" class="t-down">▼</button>
-          </div>
+          <div id="movePad" class="stick-pad move"><i id="moveKnob"></i><span>BOUGER</span></div>
           <div class="actions">
             <div class="nades">
               <button data-nade="he">HE</button>
               <button data-nade="flash">FL</button>
               <button data-nade="smoke">SM</button>
-              <button id="touchBuy">$</button>
+              <button id="touchReload">R</button>
             </div>
-            <button id="touchBoost" class="hold">⚡</button>
-            <button id="touchAct" class="hold">E</button>
-            <button id="touchFire" class="hold fire">FEU</button>
+            <div id="aimPad" class="stick-pad aim"><i id="aimKnob"></i><span>VISER<br />TIRER</span></div>
           </div>
         </section>
       </div>
 
       <section id="menu">
         <div class="menu-card">
-          <h1 class="logo">SNAKE<span>CS2D</span></h1>
-          <p class="tagline">Counter-Strike, mais t'es un serpent. Ta longueur = ta vie <em>et</em> tes balles.</p>
+          <h1 class="logo">SNAKE<span>STRIKE</span></h1>
+          <p class="tagline">Ton escouade te suit en file. Plus elle est longue, plus tu cognes fort… et plus tu es une cible.</p>
 
           <button id="profileCard" class="profile-card" type="button">
             <span class="rank-badge" id="rankBadge">S1</span>
@@ -130,7 +115,7 @@
             <div class="opt"><span>Équipes</span><div class="seg" data-opt="teamSize"><button data-v="1">1v1</button><button data-v="2">2v2</button><button data-v="3" class="on">3v3</button><button data-v="4">4v4</button><button data-v="5">5v5</button></div></div>
             <div class="opt"><span>Bots</span><div class="seg" data-opt="difficulty"><button data-v="easy">Facile</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hardcore</button></div></div>
             <div class="opt"><span>Camp</span><div class="seg" data-opt="team"><button data-v="auto" class="on">Auto</button><button data-v="T">T</button><button data-v="CT">CT</button></div></div>
-            <div class="opt"><span>Premier à</span><div class="seg" data-opt="winRounds"><button data-v="3">3</button><button data-v="5" class="on">5</button><button data-v="8">8</button></div></div>
+            <div class="opt"><span>Kills pour gagner</span><div class="seg" data-opt="scoreToWin"><button data-v="15">15</button><button data-v="25" class="on">25</button><button data-v="40">40</button></div></div>
             <button id="soloBtn" class="btn primary big">Jouer</button>
             <p class="muted small" id="xpHint"></p>
           </section>
@@ -169,11 +154,11 @@
             <summary>Comment on joue ?</summary>
             <div class="keys" id="menuKeys"></div>
             <ul class="rules">
-              <li><b>T</b> : amène la bombe sur <b>A</b> ou <b>B</b> et maintiens <kbd>E</kbd>. <b>CT</b> : maintiens <kbd>E</kbd> collé à la bombe (kit = 2× plus vite).</li>
-              <li>Chaque tir coûte <b>1 segment</b>. Une balle coupe le serpent touché ; dans la tête = <b>HEADSHOT</b>.</li>
-              <li>Foncer dans un corps ennemi ou dans ton propre corps = mort. Tête contre tête : le plus long gagne. Les murs tuent aussi. Tes coéquipiers sont traversables.</li>
-              <li>Mange les caisses et les restes des morts pour grandir. Une balle reçue interrompt la pose / le désamorçage.</li>
-              <li>Brouillard de guerre : tu ne vois que autour de ton équipe, les murs et les fumigènes bloquent la vue. Les tirs s'entendent de loin.</li>
+              <li>Tu es le <b>leader</b> (la tête). Comme dans le snake d'origine, <b>tu avances toujours</b> : tu choisis seulement la direction. Ton escouade te suit en file et <b>tire avec toi</b> vers ton viseur.</li>
+              <li>Ramasse des <b>recrues</b> pour allonger la file : plus de puissance de feu, mais une cible plus grosse et plus dure à manœuvrer.</li>
+              <li>Chaque soldat a ses PV et sert de bouclier. <b>Si le leader tombe, toute l'escouade tombe</b> — tu réapparais 3 s plus tard.</li>
+              <li>Butin : ➕ soin, 🔫 armes (SMG, AK, pompe, AWP), grenades. Toutes les 40 s, un <b>Deagle d'or</b> apparaît au centre.</li>
+              <li>Tu tires plus précis en ligne droite qu'en plein virage. Les murs et les fumigènes bloquent la vue ; les ennemis proches s'entendent (échos rouges).</li>
             </ul>
           </details>
         </div>
@@ -183,7 +168,7 @@
     <div id="rotate">
       <div class="phone"></div>
       <b>Tourne ton téléphone</b>
-      <span class="muted">Snake CS2D se joue en paysage.</span>
+      <span class="muted">Snake Strike se joue en paysage.</span>
       <span class="muted">Sur iPhone : Partager → « Sur l'écran d'accueil » pour jouer en plein écran.</span>
     </div>
 

@@ -25,7 +25,7 @@ export class RoomManager {
     return null;
   }
 
-  create({ isPublic = false, teamSize, bots = true, winRounds } = {}) {
+  create({ isPublic = false, teamSize, bots = true, scoreToWin } = {}) {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const code = this.makeCode();
     if (!code) return null;
@@ -33,7 +33,7 @@ export class RoomManager {
       teamSize: clampInt(teamSize, 1, 5, PUBLIC_TEAM_SIZE),
       bots: bots !== false,
       difficulty: 'normal',
-      winRounds: clampInt(winRounds, 2, 10, 5)
+      scoreToWin: clampInt(scoreToWin, 5, 100, 25)
     });
     const room = { code, game, isPublic, sockets: new Set(), createdAt: Date.now() };
     room.interval = setInterval(() => this.broadcast(room), game.tickMs);

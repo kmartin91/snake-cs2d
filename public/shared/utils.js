@@ -1,4 +1,5 @@
 export const enemyOf = (team) => (team === 'T' ? 'CT' : 'T');
+export const dirAngle = (d) => [-Math.PI / 2, 0, Math.PI / 2, Math.PI][d];
 export const opposite = (d) => (d + 2) % 4;
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const rand = (n) => Math.floor(Math.random() * n);

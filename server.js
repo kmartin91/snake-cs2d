@@ -16,7 +16,7 @@ const rooms = new RoomManager(io);
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (_req, res) => res.json({ ok: true, ...rooms.stats() }));
 
-const MSG_PER_SEC = 60;
+const MSG_PER_SEC = 120;
 
 function allow(socket) {
   const now = Date.now();
@@ -50,7 +50,7 @@ io.on('connection', (socket) => {
       isPublic: Boolean(payload?.isPublic),
       teamSize: payload?.teamSize,
       bots: payload?.bots,
-      winRounds: payload?.winRounds
+      scoreToWin: payload?.scoreToWin
     });
     if (!room) return reply(ack, { ok: false, error: 'Serveur plein' });
     reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || '')));
@@ -66,7 +66,7 @@ io.on('connection', (socket) => {
   socket.on('leave', () => rooms.leave(socket));
 
   socket.on('i', (msg) => {
-    if (!Array.isArray(msg) || msg.length > 2 || !allow(socket)) return;
+    if (!Array.isArray(msg) || msg.length > 4 || !allow(socket)) return;
     rooms.roomOf(socket)?.game.input(socket.id, msg);
   });
 
@@ -88,5 +88,5 @@ io.on('connection', (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`Snake CS2D sur http://localhost:${PORT}`);
+  console.log(`Snake Strike sur http://localhost:${PORT}`);
 });

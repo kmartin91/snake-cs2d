@@ -182,10 +182,74 @@ export class Audio {
       case 'xp':
         this.tone({ type: 'triangle', from: 1200, to: 1600, dur: 0.06, vol: 0.06 });
         break;
+      case 'radio':
+        this.burst({ dur: 0.12, vol: 0.12, filter: 'bandpass', freq: 1800, q: 2 });
+        this.tone({ type: 'square', from: 1400, dur: 0.05, vol: 0.05, delay: 0.1 });
+        break;
+      case 'reload':
+        this.burst({ dur: 0.05, vol: 0.25, filter: 'highpass', freq: 2500 });
+        this.burst({ dur: 0.06, vol: 0.3, filter: 'bandpass', freq: 1200, delay: 0.25 });
+        this.tone({ type: 'square', from: 300, to: 200, dur: 0.05, vol: 0.12, delay: 0.27 });
+        break;
+      case 'hitmark':
+        this.tone({ type: 'square', from: 2600, dur: 0.025, vol: 0.06 });
+        break;
+      case 'hitlead':
+        this.tone({ type: 'triangle', from: 1700, dur: 0.12, vol: 0.18 });
+        this.tone({ type: 'square', from: 2600, dur: 0.03, vol: 0.06 });
+        break;
+      case 'hurt':
+        this.tone({ type: 'sawtooth', from: 300, to: 120, dur: 0.15, vol: 0.18 });
+        break;
+      case 'golden':
+        [784, 988, 1175, 1568].forEach((f, i) => this.tone({ type: 'triangle', from: f, dur: 0.3, vol: 0.16, delay: i * 0.07 }));
+        break;
+      case 'spawn':
+        this.tone({ type: 'sine', from: 300, to: 900, dur: 0.25, vol: 0.14 });
+        break;
+      case 'recruit':
+        this.tone({ type: 'triangle', from: 660, dur: 0.07, vol: 0.18 });
+        this.tone({ type: 'triangle', from: 990, dur: 0.1, vol: 0.18, delay: 0.06 });
+        break;
+      case 'heal':
+        [523, 784, 1046].forEach((f, i) => this.tone({ type: 'sine', from: f, dur: 0.18, vol: 0.14, delay: i * 0.05 }));
+        break;
+      case 'weapon':
+        this.burst({ dur: 0.04, vol: 0.3, filter: 'highpass', freq: 2200 });
+        this.burst({ dur: 0.06, vol: 0.35, filter: 'bandpass', freq: 900, delay: 0.12 });
+        break;
       case 'chat':
         this.tone({ from: 880, dur: 0.05, vol: 0.06 });
         break;
       default:
+    }
+  }
+
+  shot(weapon, vol = 1) {
+    if (!this.ready()) return;
+    const v = Math.max(0, Math.min(1, vol));
+    switch (weapon) {
+      case 'smg':
+        this.burst({ dur: 0.06, vol: 0.32 * v, filter: 'bandpass', freq: 2600, toFreq: 1200, q: 0.9 });
+        break;
+      case 'rifle':
+        this.burst({ dur: 0.1, vol: 0.5 * v, filter: 'bandpass', freq: 1800, toFreq: 500, q: 0.7 });
+        this.tone({ type: 'square', from: 140, to: 50, dur: 0.08, vol: 0.2 * v });
+        break;
+      case 'shotgun':
+        this.burst({ dur: 0.25, vol: 0.7 * v, freq: 1400, toFreq: 120 });
+        this.tone({ type: 'sine', from: 110, to: 40, dur: 0.2, vol: 0.4 * v });
+        break;
+      case 'sniper':
+        this.burst({ dur: 0.35, vol: 0.8 * v, filter: 'bandpass', freq: 3000, toFreq: 300, q: 0.6 });
+        this.tone({ type: 'sine', from: 90, to: 30, dur: 0.4, vol: 0.5 * v });
+        break;
+      case 'golden':
+        this.burst({ dur: 0.16, vol: 0.6 * v, filter: 'bandpass', freq: 1500, toFreq: 300, q: 0.8 });
+        this.tone({ type: 'triangle', from: 1200, to: 900, dur: 0.2, vol: 0.12 * v });
+        break;
+      default:
+        this.play('shot', v * 0.8);
     }
   }
 

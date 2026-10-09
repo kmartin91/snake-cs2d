@@ -25,18 +25,17 @@ export const RANKS = [
 const TIER_COLORS = ['#aeb6bf', '#e8c15a', '#4aa3ff', '#b07cff', '#ff9a3c', '#ff4b3a'];
 
 const CHALLENGES = [
-  { id: 'hs', stat: 'headshots', goal: 3, xp: 60, label: 'Fais 3 headshots' },
-  { id: 'kills', stat: 'kills', goal: 8, xp: 60, label: 'Élimine 8 ennemis' },
-  { id: 'plant', stat: 'plants', goal: 2, xp: 50, label: 'Pose 2 bombes' },
-  { id: 'defuse', stat: 'defuses', goal: 1, xp: 50, label: 'Désamorce une bombe' },
-  { id: 'rounds', stat: 'roundsWon', goal: 6, xp: 40, label: 'Gagne 6 rounds' },
-  { id: 'he', stat: 'heKills', goal: 2, xp: 70, label: 'Tue 2 ennemis à la HE' },
-  { id: 'flash', stat: 'flashHits', goal: 4, xp: 40, label: 'Flashe 4 ennemis' },
+  { id: 'kills', stat: 'kills', goal: 12, xp: 60, label: 'Élimine 12 leaders' },
+  { id: 'downs', stat: 'downs', goal: 40, xp: 50, label: 'Abats 40 soldats ennemis' },
+  { id: 'recruits', stat: 'recruits', goal: 25, xp: 40, label: 'Recrute 25 soldats' },
+  { id: 'golden', stat: 'golden', goal: 1, xp: 60, label: 'Ramasse le Deagle d\'or' },
+  { id: 'sniper', stat: 'sniperKills', goal: 3, xp: 70, label: 'Fais 3 kills à l\'AWP' },
+  { id: 'shotgun', stat: 'shotgunKills', goal: 4, xp: 60, label: 'Fais 4 kills au pompe' },
+  { id: 'he', stat: 'heKills', goal: 1, xp: 60, label: 'Tue un leader à la HE' },
   { id: 'multi', stat: 'multiKills', goal: 1, xp: 50, label: 'Fais un double kill' },
-  { id: 'mvp', stat: 'mvps', goal: 2, xp: 50, label: 'Sois MVP 2 fois' },
+  { id: 'squad', stat: 'bigSquad', goal: 1, xp: 50, label: 'Atteins une escouade de 10' },
   { id: 'match', stat: 'matchesWon', goal: 1, xp: 100, label: 'Gagne un match' },
-  { id: 'cut', stat: 'segmentsCut', goal: 30, xp: 50, label: 'Découpe 30 segments ennemis' },
-  { id: 'crates', stat: 'crates', goal: 10, xp: 30, label: 'Ramasse 10 caisses' }
+  { id: 'heal', stat: 'heals', goal: 5, xp: 30, label: 'Ramasse 5 soins' }
 ];
 
 const STREAK_NAMES = { 2: 'Double kill', 3: 'Triple kill', 4: 'Quadra kill', 5: 'Penta kill' };
@@ -90,7 +89,7 @@ function defaults() {
     skin: 'classic',
     streak: 0,
     bestStreak: 0,
-    stats: { matches: 0, wins: 0, kills: 0, deaths: 0, headshots: 0, plants: 0, defuses: 0, mvps: 0, bestKills: 0 },
+    stats: { matches: 0, wins: 0, kills: 0, deaths: 0, downs: 0, bestKills: 0 },
     daily: { date: '', ids: [], counts: {}, done: [] }
   };
 }
@@ -112,7 +111,9 @@ export class Progress {
 
   ensureDaily() {
     const date = today();
-    if (this.s.daily.date === date) return;
+    const ids = this.s.daily.ids || [];
+    const valid = ids.length === 3 && ids.every((id) => CHALLENGES.some((c) => c.id === id));
+    if (this.s.daily.date === date && valid) return;
     this.s.daily = { date, ids: dailyIds(date), counts: {}, done: [] };
     this.save();
   }
@@ -194,48 +195,33 @@ export class Progress {
         this.match.kills += 1;
         this.gain(10, 'Éliminations');
         this.bump('kills');
-        if (ev.how === 'headshot') {
-          st.headshots += 1;
-          this.gain(5, 'Headshots');
-          this.bump('headshots');
-        }
+        if (ev.how === 'sniper') this.bump('sniperKills');
+        if (ev.how === 'shotgun') this.bump('shotgunKills');
         if (ev.how === 'he') this.bump('heKills');
         if (ev.streak >= 2) {
           this.gain(5 * ev.streak, STREAK_NAMES[Math.min(5, ev.streak)]);
           if (ev.streak === 2) this.bump('multiKills');
         }
-        if (ev.ace) this.gain(50, 'ACE');
         break;
-      case 'cut':
-        if (ev.by === selfId) this.bump('segmentsCut', ev.n);
-        break;
-      case 'planted':
-        if (ev.id !== selfId) break;
-        st.plants += 1;
-        this.gain(15, 'Bombes posées');
-        this.bump('plants');
-        break;
-      case 'defused':
-        if (ev.id !== selfId) break;
-        st.defuses += 1;
-        this.gain(25, 'Bombes désamorcées');
-        this.bump('defuses');
-        break;
-      case 'flash':
-        if (ev.id === selfId && ev.hit.length) this.bump('flashHits', ev.hit.length);
+      case 'down':
+        if (ev.by !== selfId) break;
+        st.downs = (st.downs || 0) + 1;
+        this.gain(2, 'Soldats abattus');
+        this.bump('downs');
         break;
       case 'pickup':
-        if (ev.id === selfId && ev.k === 'crate') this.bump('crates');
-        break;
-      case 'roundend':
-        if (self && self.tm === ev.winner) {
-          this.gain(10, 'Rounds gagnés');
-          this.bump('roundsWon');
+        if (ev.id !== selfId) break;
+        if (ev.k === 'recruit' || ev.k === 'tag') {
+          this.bump('recruits');
+          if (self && self.s.length / 2 >= 10 && !this.match.bigSquad) {
+            this.match.bigSquad = true;
+            this.bump('bigSquad');
+          }
         }
-        if (ev.mvp === selfId) {
-          st.mvps += 1;
-          this.gain(15, 'MVP');
-          this.bump('mvps');
+        if (ev.k === 'medkit') this.bump('heals');
+        if (ev.k === 'golden') {
+          this.gain(15, 'Deagle d\'or');
+          this.bump('golden');
         }
         break;
       case 'matchend': {
@@ -249,7 +235,7 @@ export class Progress {
           const bonus = 1 + Math.min(1, 0.25 * (this.s.streak - 1));
           this.gain(60 * bonus, this.s.streak > 1 ? `Victoire (série ×${this.s.streak})` : 'Victoire');
           this.bump('matchesWon');
-        } else {
+        } else if (ev.winner !== 'draw') {
           this.s.streak = 0;
         }
         this.save();
@@ -258,4 +244,5 @@ export class Progress {
       default:
     }
   }
+
 }

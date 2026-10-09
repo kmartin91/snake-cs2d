@@ -1,5 +1,5 @@
-import { CONFIG, DIRS, DURATIONS, SHOP, TICK_MS, ZONE, timings } from '../shared/config.js';
-import { Renderer, TEAM_COLORS, cellsOf } from './render.js';
+import { CONFIG, TICK_MS, WEAPONS } from '../shared/config.js';
+import { Renderer, TEAM_COLORS, soldiersOf } from './render.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
 import { Menu } from './menu.js';
@@ -15,7 +15,7 @@ const stage = $('stage');
 const canvas = $('game');
 const renderer = new Renderer(canvas);
 const audio = new Audio();
-const hud = new Hud({ onBuy: (item) => session?.send(['buy', item]) });
+const hud = new Hud();
 const progress = new Progress();
 hud.progress = progress;
 hud.onReplay = () => {
@@ -25,10 +25,7 @@ hud.onMenu = () => leaveGame();
 progress.onGain = ({ amount, label, levelUps, unlocks }) => {
   if (!session) return;
   hud.xpToast(amount, label);
-  if (!levelUps.length) {
-    audio.play('xp');
-    return;
-  }
+  if (!levelUps.length) return;
   const level = levelUps[levelUps.length - 1];
   const unlockText = unlocks.length ? ` · Skin débloqué : ${unlocks.map((u) => u.name).join(', ')} !` : '';
   hud.announce(`NIVEAU ${level}`, `${rankName(level)}${unlockText}`, '#ffd25e', 3500);
@@ -41,14 +38,14 @@ let prev = null;
 let curr = null;
 let currAt = 0;
 let lastFrame = performance.now();
-let lastBeep = 0;
-let lastDefuseTick = 0;
 let paused = false;
 let chatOpen = false;
 let socket = null;
-let localDirs = [];
-let lastSpawnSeq = -1;
-const held = { boost: false, action: false };
+const aim = { mode: 'heading', cx: 0, cy: 0, angle: 0, dist: 6, target: null, sentAngle: 99, sentDist: 0, sentAt: 0 };
+const moveState = { x: 0, y: 0, sentAt: 0, pending: false };
+
+const coarse = matchMedia('(pointer: coarse)');
+const portrait = matchMedia('(pointer: coarse) and (orientation: portrait)');
 
 const menu = new Menu(
   {
@@ -61,8 +58,6 @@ const menu = new Menu(
   progress
 );
 
-const coarse = matchMedia('(pointer: coarse)');
-const portrait = matchMedia('(pointer: coarse) and (orientation: portrait)');
 
 function resize() {
   if (coarse.matches) {
@@ -87,12 +82,12 @@ function goFullscreen() {
   if (!coarse.matches) return;
   const lock = () => screen.orientation?.lock?.('landscape').catch(() => {});
   const el = document.documentElement;
-  const request = el.requestFullscreen || el.webkitRequestFullscreen;
-  if (isFullscreen() || !request) {
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (isFullscreen() || !req) {
     lock();
     return;
   }
-  Promise.resolve(request.call(el, { navigationUI: 'hide' }))
+  Promise.resolve(req.call(el, { navigationUI: 'hide' }))
     .then(lock)
     .catch(() => {});
 }
@@ -113,10 +108,11 @@ function onSnapshot(snap) {
   prev = curr;
   curr = snap;
   currAt = performance.now();
+  renderer.addBullets(snap.nb);
   if (!session) return;
-  reconcileDirs(snap);
   hud.snap = snap;
   hud.selfId = session.selfId;
+  for (const [x, y] of snap.ns || []) renderer.ping(x, y, 'step');
   for (const ev of snap.ev) {
     handleEvent(ev, snap);
     progress.handleEvent(ev, snap, session.selfId);
@@ -146,11 +142,14 @@ function enterGame(newSession, roomInfo) {
   curr = null;
   paused = false;
   renderer.fx.clear();
+  renderer.bullets = [];
   hud.reset();
   hud.online = session.online;
   hud.setRoom(roomInfo);
   menu.hide();
   $('hud').classList.remove('hidden');
+  stage.classList.add('ingame');
+  aim.sentAngle = 99;
   $('pauseMenu').classList.add('hidden');
   audio.unlock();
   syncPause();
@@ -162,6 +161,7 @@ function leaveGame(errorMsg = '') {
   inputs.releaseAll();
   closeChat();
   $('hud').classList.add('hidden');
+  stage.classList.remove('ingame');
   $('flash').style.opacity = '0';
   history.replaceState(null, '', location.pathname);
   menu.show();
@@ -226,54 +226,52 @@ async function goOnline(kind, payload) {
   }
 }
 
-function reconcileDirs(snap) {
-  const self = snap.p.find((p) => p.id === session.selfId);
-  if (!self || !self.a || self.sq !== lastSpawnSeq) {
-    localDirs = [];
-    lastSpawnSeq = self ? self.sq : -1;
-    return;
-  }
-  const now = performance.now();
-  while (
-    localDirs.length &&
-    (localDirs[0].d === self.d || localDirs[0].d === (self.d + 2) % 4 || now - localDirs[0].at > snap.tk * 2 + 300)
-  ) {
-    localDirs.shift();
-  }
-}
-
-function trackDir(d) {
-  const self = selfPlayer();
-  if (!self || !self.a) return;
-  const last = localDirs.length ? localDirs[localDirs.length - 1].d : self.d;
-  if (d !== last && localDirs.length < 3) localDirs.push({ d, at: performance.now() });
-}
-
-function prediction(snap) {
-  const self = selfPlayer(snap);
-  if (!self || !self.a || !self.s.length) return null;
-  const pred = { id: self.id, dir: localDirs.length ? localDirs[0].d : self.d, k: 1, gb: self.gb };
-  if (snap.ph === 'freeze' || snap.ph === 'matchover') pred.k = 0;
-  const [hx, hy] = self.s;
-  const zone = renderer.map.zone[hy * renderer.map.width + hx];
-  const b = snap.bomb;
-  const planting = self.tm === 'T' && self.hb && (zone === ZONE.A || zone === ZONE.B) && snap.ph === 'live';
-  const defusing = self.tm === 'CT' && b.s === 'planted' && Math.max(Math.abs(hx - b.x), Math.abs(hy - b.y)) <= 1;
-  if (self.ac || (held.action && (planting || defusing))) pred.k = 0;
-  else if (pred.k && held.boost && (self.bo || self.st >= CONFIG.boostRestart)) pred.k = 2;
-  return pred;
-}
-
 function selfPlayer(snap = curr) {
   return snap && session ? snap.p.find((p) => p.id === session.selfId) : null;
+}
+
+function sendAim(now, force = false) {
+  if (!session) return;
+  const turned = Math.abs(Math.atan2(Math.sin(aim.angle - aim.sentAngle), Math.cos(aim.angle - aim.sentAngle)));
+  if (!force && (now - aim.sentAt < 50 || (turned < 0.02 && Math.abs(aim.dist - aim.sentDist) < 0.5))) return;
+  session.send(['aim', Math.round(aim.angle * 1000) / 1000, Math.round(aim.dist * 10) / 10, aim.mode === 'stick' ? 1 : 0]);
+  aim.sentAngle = aim.angle;
+  aim.sentDist = aim.dist;
+  aim.sentAt = now;
+}
+
+function updateAim(now) {
+  const self = selfPlayer();
+  if (!session || !self || !self.a || !self.s.length) return null;
+  const head = renderer.lastPaths.get(self.id)?.[0] || { x: self.s[0], y: self.s[1] };
+  aim.target = null;
+  if (aim.mode === 'mouse') {
+    const p = renderer.toCell(aim.cx, aim.cy);
+    aim.angle = Math.atan2(p.y - head.y, p.x - head.x);
+    aim.dist = Math.hypot(p.x - head.x, p.y - head.y);
+    aim.target = p;
+  } else if (aim.mode === 'heading') {
+    aim.angle = self.an;
+    aim.dist = 6;
+  }
+  sendAim(now);
+  return { head, angle: aim.angle, dist: aim.dist, target: aim.target };
+}
+
+function sendMove(now, force = false) {
+  if (!session || !moveState.pending) return;
+  if (!force && now - moveState.sentAt < 45) return;
+  session.send(['mv', Math.round(moveState.x * 100) / 100, Math.round(moveState.y * 100) / 100]);
+  moveState.sentAt = now;
+  moveState.pending = false;
 }
 
 function volumeAt(x, y, id) {
   if (session && id === session.selfId) return 1;
   const self = selfPlayer();
-  if (!self || !self.a) return 0.55;
+  if (!self || !self.a) return 0.5;
   const d = Math.hypot(self.s[0] - x, self.s[1] - y);
-  return Math.max(0.18, 1 - d / 36) * 0.8;
+  return Math.max(0.12, 1 - d / 30) * 0.75;
 }
 
 function playerName(snap, id) {
@@ -288,79 +286,58 @@ function handleEvent(ev, snap) {
 
   switch (ev.type) {
     case 'shot': {
-      const D = DIRS[ev.d];
-      fx.cone(ev.x + D.x * 0.6, ev.y + D.y * 0.6, D.x, D.y);
-      if (mine) fx.addShake(1.5);
-      audio.play('shot', volumeAt(ev.x, ev.y, ev.id));
+      const dx = Math.cos(ev.a);
+      const dy = Math.sin(ev.a);
+      fx.cone(ev.x + dx * 0.6, ev.y + dy * 0.6, dx, dy, { n: 5, life: 0.1 });
+      if (!mine && !renderer.visible(Math.round(ev.x), Math.round(ev.y))) renderer.ping(ev.x, ev.y, 'shot');
+      if (mine) fx.addShake(ev.w === 'sniper' || ev.w === 'shotgun' ? 3 : 0.8);
+      audio.shot(ev.w, volumeAt(ev.x, ev.y, ev.id));
       break;
     }
-    case 'impact':
-      fx.burst(ev.x, ev.y, { n: 6, color: ['#ffe0a0', '#c9b08a'], speed: 5, life: 0.3, size: 0.09 });
-      audio.play('impact', volumeAt(ev.x, ev.y) * 0.6);
+    case 'bhit':
+      renderer.hitBullet(ev.b, ev.x, ev.y);
       break;
-    case 'cut': {
-      const victim = snap.p.find((p) => p.id === ev.victim);
+    case 'hit': {
+      const victim = snap.p.find((p) => p.id === ev.id);
       const col = victim ? TEAM_COLORS[victim.tm] : TEAM_COLORS.T;
-      fx.burst(ev.x, ev.y, { n: 14, color: [col.main, col.light, col.dark], speed: 7, life: 0.5, size: 0.16, kind: 'blob' });
-      fx.text(ev.x, ev.y - 0.6, `-${ev.n}`, '#ff6b5a', 0.8, 0.9);
-      if (ev.victim === selfId) fx.addShake(5);
-      audio.play('cut', ev.by === selfId || ev.victim === selfId ? 1 : volumeAt(ev.x, ev.y));
-      break;
-    }
-    case 'armor':
-      fx.burst(ev.x, ev.y, { n: 12, color: ['#cfe3ee', '#8fa3ae'], speed: 7, life: 0.4, size: 0.1 });
-      fx.text(ev.x, ev.y - 0.8, 'CASQUE !', '#cfe3ee', 0.8);
-      audio.play('armor', ev.id === selfId || ev.by === selfId ? 1 : volumeAt(ev.x, ev.y));
-      break;
-    case 'kill':
-      onKill(ev, snap, self);
-      break;
-    case 'pickup':
-      if (ev.k === 'crate') fx.burst(ev.x, ev.y, { n: 8, color: ['#ffe07a', '#b37a3a'], speed: 4, life: 0.4, size: 0.12 });
-      if (mine) audio.play(ev.k === 'crate' ? 'crate' : 'pickup', 0.8);
-      break;
-    case 'bombpick':
-      if (mine) {
-        hud.announce('TU AS LA BOMBE', 'Direction A ou B, maintiens E sur le site', '#ff7a45', 2200);
-        audio.play('crate');
-      } else if (self && self.tm === 'T') hud.system(`${playerName(snap, ev.id)} a récupéré la bombe`);
-      break;
-    case 'bombdrop':
-      fx.ring(ev.x, ev.y, 2, '#ffd25e', 0.6);
-      if (self && self.tm === 'T') hud.system('La bombe est au sol !');
-      break;
-    case 'plantstart':
-      audio.play('beep', volumeAt(snap.bomb.x, snap.bomb.y, ev.id));
-      break;
-    case 'planted':
-      fx.ring(ev.x, ev.y, 4, '#ff3b1f', 0.8, 0.4);
-      hud.announce('BOMBE POSÉE', `Site ${ev.site} · ${DURATIONS.bomb} secondes`, '#ff4b3a', 2600);
-      audio.play('plant');
-      audio.say('Bomb has been planted');
-      lastBeep = performance.now();
-      break;
-    case 'defusestart':
-      if (self && self.tm === 'T') hud.system(`${playerName(snap, ev.id)} désamorce ${ev.kit ? 'AVEC un kit' : 'sans kit'} !`);
-      break;
-    case 'interrupt':
-      {
-        const p = snap.p.find((x) => x.id === ev.id);
-        if (p && p.a) renderer.fx.text(p.s[0], p.s[1] - 1, 'INTERROMPU', '#ffd25e', 0.7);
-        if (mine) audio.play('deny');
+      fx.burst(ev.x, ev.y, { n: ev.lead ? 7 : 4, color: [col.main, col.dark], speed: 4, life: 0.35, size: 0.12, kind: 'blob' });
+      if (ev.by === selfId) {
+        fx.text(ev.x, ev.y - 0.5, `${ev.dmg}`, ev.lead ? '#ffd25e' : '#ffffff', ev.lead ? 0.7 : 0.5, 0.6);
+        audio.play(ev.lead ? 'hitlead' : 'hitmark');
+      }
+      if (mine && ev.lead) {
+        fx.addShake(4);
+        flashScreen('#ff2a1a', 0.18);
       }
       break;
-    case 'defused':
-      hud.announce('BOMBE DÉSAMORCÉE', playerName(snap, ev.id), '#45b5ff', 2600);
-      audio.say('Bomb has been defused');
+    }
+    case 'down': {
+      const victim = snap.p.find((p) => p.id === ev.id);
+      const col = victim ? TEAM_COLORS[victim.tm] : TEAM_COLORS.T;
+      fx.burst(ev.x, ev.y, { n: 12, color: [col.main, col.light, col.dark], speed: 6, life: 0.5, size: 0.16, kind: 'blob' });
+      if (ev.by === selfId) audio.play('cut');
+      if (mine) audio.play('hurt');
       break;
-    case 'explode':
-      fx.ring(ev.x, ev.y, CONFIG.bombRadius, '#ffb347', 1.1, 0.8);
-      fx.ring(ev.x, ev.y, CONFIG.bombRadius * 0.6, '#fff1c2', 0.6, 0.6);
-      fx.burst(ev.x, ev.y, { n: 160, color: ['#ffdf7a', '#ff8a3d', '#ff3b1f', '#fff'], speed: 22, life: 1.2, size: 0.3 });
-      fx.burst(ev.x, ev.y, { n: 40, color: ['#4a3b2b', '#6b5a48'], speed: 6, life: 2.2, size: 0.9, grow: 1.2, kind: 'smoke' });
-      fx.addShake(28);
-      flashScreen('#ffb070', 0.75);
-      audio.play('explosion');
+    }
+    case 'kill':
+      onKill(ev, snap);
+      break;
+    case 'pickup':
+      onPickup(ev, snap, mine);
+      break;
+    case 'golden':
+      fx.ring(ev.x, ev.y, 3, '#ffd25e', 0.9, 0.4);
+      hud.announce('DEAGLE D\'OR', 'Il vient d\'apparaître au centre de la carte', '#ffd25e', 2600);
+      audio.play('golden');
+      break;
+    case 'spawn':
+      if (mine) {
+        fx.ring(ev.x, ev.y, 1.6, '#9be3ff', 0.5, 0.25);
+        audio.play('spawn');
+      }
+      break;
+    case 'reload':
+      if (mine) audio.play('reload');
       break;
     case 'he':
       fx.ring(ev.x, ev.y, CONFIG.heRadius + 0.5, '#ffb347', 0.5, 0.5);
@@ -373,12 +350,8 @@ function handleEvent(ev, snap) {
       fx.ring(ev.x, ev.y, CONFIG.flashRadius, 'rgba(255,255,255,0.9)', 0.35, 0.3);
       fx.burst(ev.x, ev.y, { n: 24, color: '#fff', speed: 16, life: 0.25, size: 0.14 });
       audio.play('flashbang', volumeAt(ev.x, ev.y));
-      if (ev.hit.includes(selfId)) {
-        audio.ring(2.6);
-        hud.system('Flashé !');
-      } else if (mine && ev.hit.length) {
-        hud.system(`Tu as flashé ${ev.hit.length} ennemi${ev.hit.length > 1 ? 's' : ''} !`);
-      }
+      if (ev.hit.includes(selfId)) audio.ring(2.4);
+      else if (mine && ev.hit.length) hud.system(`Tu as flashé ${ev.hit.length} ennemi${ev.hit.length > 1 ? 's' : ''} !`);
       break;
     case 'smoke':
       fx.burst(ev.x, ev.y, { n: 18, color: ['#c8cdd0', '#aeb4b8'], speed: 4, life: 1.2, size: 0.6, grow: 1.2, kind: 'smoke' });
@@ -388,50 +361,28 @@ function handleEvent(ev, snap) {
       audio.play('throw', volumeAt(ev.x, ev.y, ev.id));
       if (mine) audio.say(ev.g === 'flash' ? 'Flashbang out!' : ev.g === 'smoke' ? 'Smoke out!' : 'Fire in the hole!');
       break;
-    case 'buy':
-      if (mine) audio.play('buy');
-      break;
-    case 'buyfail':
-      if (ev.to === selfId) {
-        audio.play('deny');
-        hud.system(ev.msg);
-      }
-      break;
-    case 'freeze':
-      hud.announce(`ROUND ${ev.round}`, self ? `Tu es ${self.tm === 'T' ? 'TERRORISTE' : 'ANTI-TERRORISTE'} · B pour acheter` : '', self ? (self.tm === 'T' ? '#ff7a45' : '#45b5ff') : '#fff', 2400);
-      hud.toggleBuy(false);
+    case 'matchstart':
+      hud.announce('SNAKE STRIKE', `Premier à ${ev.goal} kills · ramasse des recrues !`, '#ffd25e', 2600);
       break;
     case 'live':
-      hud.toggleBuy(false);
       hud.announce('GO GO GO !', '', '#ffd25e', 1100);
       audio.play('go');
-      if (Math.random() < 0.6) audio.say(self && self.tm === 'CT' ? "Let's move out" : 'Go go go');
-      break;
-    case 'roundend':
-      hud.roundEnd(ev);
-      if (self) audio.play(self.tm === ev.winner ? 'win' : 'lose');
-      setTimeout(() => audio.say(ev.winner === 'T' ? 'Terrorists win' : 'Counter-terrorists win'), 600);
-      break;
-    case 'halftime':
-      hud.announce('MI-TEMPS', 'Changement de camp ! Argent remis à zéro.', '#ffd25e', 3000);
-      break;
-    case 'matchstart':
-      hud.system(`Nouveau match — premier à ${ev.winRounds} rounds.`);
+      audio.say('Go go go');
       break;
     case 'matchend':
-      if (self) audio.play(self.tm === ev.winner ? 'win' : 'lose');
+      if (self) audio.play(ev.winner === 'draw' ? 'go' : self.tm === ev.winner ? 'win' : 'lose');
+      setTimeout(() => {
+        if (ev.winner !== 'draw') audio.say(ev.winner === 'T' ? 'Terrorists win' : 'Counter-terrorists win');
+      }, 500);
       break;
     case 'warmup':
-      hud.announce('ÉCHAUFFEMENT', 'En attente d\'un adversaire… respawn infini, achats gratuits', '#ffd25e', 3000);
+      hud.announce('ÉCHAUFFEMENT', 'En attente d\'un adversaire…', '#ffd25e', 3000);
       break;
     case 'join':
       if (ev.id !== selfId) hud.system(`${ev.name} a rejoint (${ev.team})`);
       break;
     case 'leave':
       hud.system(`${ev.name} est parti`);
-      break;
-    case 'teamswitch':
-      hud.system(`${ev.name} passe ${ev.team} (équilibrage)`);
       break;
     case 'chat':
       hud.chat(ev);
@@ -441,42 +392,59 @@ function handleEvent(ev, snap) {
   }
 }
 
-function onKill(ev, snap, self) {
+function onPickup(ev, snap, mine) {
+  const fx = renderer.fx;
+  const colors = { recruit: '#7dff7a', tag: '#b8c2c9', medkit: '#ff6b5a', weapon: '#ffd25e', golden: '#ffd25e' };
+  fx.burst(ev.x, ev.y, { n: 10, color: colors[ev.k] || '#fff', speed: 4, life: 0.4, size: 0.12 });
+  if (ev.k === 'golden') {
+    hud.system(`👑 ${playerName(snap, ev.id)} a le Deagle d'or !`);
+    if (mine) hud.announce('DEAGLE D\'OR', 'Gros dégâts — tout le monde va te traquer', '#ffd25e', 2200);
+  }
+  if (!mine) return;
+  if (ev.k === 'recruit' || ev.k === 'tag') {
+    fx.text(ev.x, ev.y - 0.6, '+1 🐍', '#7dff7a', 0.6, 0.8);
+    audio.play('recruit');
+  } else if (ev.k === 'medkit') {
+    fx.text(ev.x, ev.y - 0.6, `+${CONFIG.medkitHeal} ❤`, '#ff8a7a', 0.6, 0.8);
+    audio.play('heal');
+  } else if (ev.k === 'weapon' || ev.k === 'golden') {
+    fx.text(ev.x, ev.y - 0.6, WEAPONS[ev.w].name, WEAPONS[ev.w].color, 0.7, 1);
+    audio.play('weapon');
+  } else {
+    fx.text(ev.x, ev.y - 0.6, ev.k.toUpperCase(), '#ffffff', 0.6, 0.8);
+    audio.play('pickup');
+  }
+}
+
+function onKill(ev, snap) {
   const fx = renderer.fx;
   const selfId = session.selfId;
   const prevVictim = prev ? prev.p.find((p) => p.id === ev.victim) : null;
   const team = snap.p.find((p) => p.id === ev.victim)?.tm || prevVictim?.tm || 'T';
   const col = TEAM_COLORS[team];
-  let body = renderer.lastPaths.get(ev.victim) || (prevVictim ? cellsOf(prevVictim.s) : []);
+  let body = renderer.lastPaths.get(ev.victim) || (prevVictim ? soldiersOf(prevVictim.s) : []);
   if (!body.length) body = [{ x: ev.x, y: ev.y }];
-  for (const seg of body) {
-    fx.burst(seg.x, seg.y, { n: 3, color: [col.main, col.light, col.dark], speed: 5, life: 0.7, size: 0.18, kind: 'blob' });
+  for (const s of body) {
+    fx.burst(s.x, s.y, { n: 5, color: [col.main, col.light, col.dark], speed: 6, life: 0.7, size: 0.18, kind: 'blob' });
   }
-  fx.burst(ev.x, ev.y, { n: 20, color: [col.main, '#fff'], speed: 10, life: 0.6, size: 0.14 });
-  fx.ring(ev.x, ev.y, 1.8, col.main, 0.45, 0.3);
+  fx.burst(ev.x, ev.y, { n: 24, color: [col.main, '#fff'], speed: 10, life: 0.6, size: 0.14 });
+  fx.ring(ev.x, ev.y, 2.2, col.main, 0.5, 0.35);
   hud.killfeed(ev);
 
-  const headshot = ev.how === 'headshot';
-  if (headshot) fx.text(ev.x, ev.y - 1, 'HEADSHOT', '#ffd25e', 0.9, 1.2);
-
   if (ev.killer === selfId) {
-    fx.text(ev.x, ev.y - 1.8, `+$${CONFIG.money.kill}`, '#8ff08f', 0.7, 1.2);
-    audio.play(headshot ? 'headshot' : 'kill');
-    if (ev.ace) {
-      hud.announce('ACE !!!', 'Toute l\'équipe adverse, à toi tout seul', '#ffd25e', 3000);
-      audio.say('Ace!');
-    } else if (ev.streak >= 2) {
-      hud.announce(STREAKS[Math.min(5, ev.streak)], headshot ? 'HEADSHOT' : '', '#ffd25e', 1600);
-      audio.say(STREAKS[Math.min(5, ev.streak)].toLowerCase());
-    } else if (headshot) {
-      hud.announce('HEADSHOT', '', '#ffd25e', 1000);
+    fx.text(ev.x, ev.y - 1, 'ÉLIMINÉ', '#ffd25e', 0.9, 1.2);
+    audio.play('kill');
+    if (ev.streak >= 2) {
+      const label = STREAKS[Math.min(5, ev.streak)];
+      hud.announce(label, `${ev.squad ? `+${ev.squad} soldats à terre` : ''}`, '#ffd25e', 1600);
+      audio.say(label.toLowerCase());
     }
   } else if (ev.victim === selfId) {
-    fx.addShake(12);
-    flashScreen('#ff2a1a', 0.35);
-    audio.play('kill');
+    fx.addShake(14);
+    flashScreen('#ff2a1a', 0.4);
+    audio.play('lose');
   } else {
-    audio.play(headshot ? 'headshot' : 'kill', volumeAt(ev.x, ev.y) * 0.6);
+    audio.play('kill', volumeAt(ev.x, ev.y) * 0.6);
   }
 }
 
@@ -486,39 +454,22 @@ function flashScreen(color, opacity) {
   el.style.background = color;
   el.style.opacity = String(opacity);
   requestAnimationFrame(() => {
-    el.style.transition = 'opacity 0.6s ease-out';
+    el.style.transition = 'opacity 0.5s ease-out';
     el.style.opacity = '0';
     setTimeout(() => {
       el.style.background = '#fff';
       el.style.transition = '';
-    }, 650);
+    }, 550);
   });
-}
-
-function bombSounds(now) {
-  if (!session || !curr) return;
-  const b = curr.bomb;
-  if (b.s === 'planted') {
-    const k = Math.max(0, b.t / timings(curr.tk).bomb);
-    const interval = Math.max(90, 1000 * k);
-    if (now - lastBeep >= interval) {
-      lastBeep = now;
-      audio.play('beep', volumeAt(b.x, b.y) + 0.2);
-    }
-    if (b.dp > 0 && now - lastDefuseTick > 280) {
-      lastDefuseTick = now;
-      audio.play('defusing', volumeAt(b.x, b.y));
-    }
-  }
 }
 
 function frame(now) {
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   const t = curr ? Math.max(0, Math.min(1, (now - currAt) / (curr.tk || TICK_MS))) : 0;
-  const predict = session && curr ? prediction(curr) : null;
-  renderer.draw({ prev, curr, t, selfId: session ? session.selfId : null, now, dt, predict });
-  bombSounds(now);
+  sendMove(now);
+  const aimView = updateAim(now);
+  renderer.draw({ prev, curr, t, selfId: session ? session.selfId : null, now, dt, aim: aimView });
   requestAnimationFrame(frame);
 }
 
@@ -579,27 +530,31 @@ $('voiceBtn').addEventListener('click', () => {
 
 const inputs = bindInput(canvas, {
   active: () => Boolean(session) && !paused && !chatOpen,
-  dir: (d) => {
-    trackDir(d);
-    session.send(['d', d]);
+  move: (x, y) => {
+    moveState.x = x;
+    moveState.y = y;
+    moveState.pending = true;
+    sendMove(performance.now(), x === 0 && y === 0);
   },
-  fire: (v) => session?.send(['f', v ? 1 : 0]),
-  boost: (v) => {
-    held.boost = v;
-    session?.send(['b', v ? 1 : 0]);
+  fire: (v) => {
+    if (!session) return;
+    if (v) sendAim(performance.now(), true);
+    session.send(['f', v ? 1 : 0]);
   },
-  action: (v) => {
-    held.action = v;
-    session?.send(['a', v ? 1 : 0]);
+  aimAt: (x, y) => {
+    aim.cx = x;
+    aim.cy = y;
+    if (session && !coarse.matches) aim.mode = 'mouse';
   },
-  nade: (g) => session.send(['g', g]),
-  buy: (i) => {
-    if (hud.isBuyOpen() && SHOP[i]) session.send(['buy', SHOP[i].id]);
+  aimStick: (angle) => {
+    aim.mode = 'stick';
+    aim.angle = angle;
+    aim.dist = 6;
   },
-  toggleBuy: () => {
-    if (!hud.toggleBuy() && curr && curr.ph !== 'freeze' && curr.ph !== 'warmup') {
-      hud.system('Achats uniquement pendant le freeze time');
-    }
+  reload: () => session?.send(['r']),
+  nade: (g) => {
+    sendAim(performance.now(), true);
+    session.send(['g', g]);
   },
   scoreboard: (v) => session && hud.toggleScoreboard(v),
   chat: openChat,
@@ -607,7 +562,6 @@ const inputs = bindInput(canvas, {
   escape: () => {
     if (!session) return;
     if (chatOpen) closeChat();
-    else if (hud.isBuyOpen()) hud.toggleBuy(false);
     else setPaused(!paused);
   }
 });

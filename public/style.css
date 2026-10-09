@@ -427,40 +427,26 @@ kbd {
   gap: 6px;
 }
 
-.stat.len b {
+
+
+
+
+
+
+
+.stat.ammo b {
   font-family: "Black Ops One", system-ui;
-  font-size: 1.5rem;
-  min-width: 2ch;
+  font-size: 1.1rem;
+  min-width: 3.4ch;
 }
 
-.stat.len.low b {
-  color: var(--danger);
+
+.stat.ammo.reloading b {
+  animation: blink 0.5s steps(2) infinite;
 }
 
-.stat .bar {
-  width: 90px;
-  height: 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  overflow: hidden;
-}
 
-.stat .bar i {
-  display: block;
-  height: 100%;
-  width: 100%;
-  background: linear-gradient(90deg, #3fd1ff, #a7ff6a);
-  transition: width 0.1s linear;
-}
 
-.stat .bar.locked i {
-  background: #6b7a82;
-}
-
-.stat.money b {
-  color: #8ff08f;
-  font-size: 1.05rem;
-}
 
 .items {
   display: flex;
@@ -500,54 +486,13 @@ kbd {
   letter-spacing: 0.04em;
 }
 
-#buyMenu header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
 
-#buyMoney {
-  color: #8ff08f;
-  font-size: 1.2rem;
-}
 
-#buyList {
-  display: grid;
-  gap: 6px;
-}
 
-.buy-item {
-  display: grid;
-  grid-template-columns: 26px 1fr auto;
-  gap: 8px;
-  align-items: center;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 9px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.04);
-  cursor: pointer;
-}
 
-.buy-item:hover:not(:disabled) {
-  border-color: var(--gold);
-  background: rgba(255, 210, 94, 0.08);
-}
 
-.buy-item:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
 
-.buy-item small {
-  display: block;
-  color: var(--muted);
-  font-size: 0.7rem;
-}
 
-.buy-item .price {
-  color: #8ff08f;
-}
 
 #scoreboard,
 #matchOver {
@@ -1162,9 +1107,123 @@ h3 {
 }
 
 @media (pointer: coarse) {
+  .stat.hp .bar {
+    width: 52px;
+  }
+
+  .stat.hp b,
+  .stat.squad b,
+  .stat.ammo b {
+    font-size: 0.95rem;
+  }
+
   #xpFeed {
     bottom: 30px;
   }
+}
+
+.stat.hp .bar {
+  width: 110px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.stat.hp .bar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #4ade80, #a7ff6a);
+  transition: width 0.15s linear;
+}
+
+.stat.hp.low .bar i {
+  background: linear-gradient(90deg, #ff4b3a, #ff8a3d);
+}
+
+.stat.hp b,
+.stat.squad b,
+.stat.ammo b {
+  font-family: "Black Ops One", system-ui;
+  font-size: 1.15rem;
+  min-width: 2.2ch;
+}
+
+.stat.ammo span {
+  font-family: "Black Ops One", system-ui;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+}
+
+.stat.ammo.low b,
+.stat.ammo.reloading b {
+  color: var(--danger);
+}
+
+.stat.ammo.reloading b {
+  animation: blink 0.5s steps(2) infinite;
+}
+
+.stick-pad {
+  position: absolute;
+  bottom: 12px;
+  aspect-ratio: 1;
+  width: calc(var(--side, 150px) - 14px);
+  border-radius: 50%;
+  pointer-events: auto;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+}
+
+.stick-pad.move {
+  left: 8px;
+  border: 2px solid rgba(160, 220, 255, 0.45);
+  background: radial-gradient(circle, rgba(69, 181, 255, 0.18), rgba(10, 16, 21, 0.65) 70%);
+}
+
+.stick-pad.aim {
+  position: relative;
+  bottom: auto;
+  grid-column: 1 / -1;
+  width: 100%;
+  border: 2px solid rgba(255, 90, 60, 0.6);
+  background: radial-gradient(circle, rgba(200, 50, 30, 0.35), rgba(10, 16, 21, 0.65) 70%);
+}
+
+.stick-pad span {
+  font-family: "Black Ops One", system-ui;
+  font-size: 0.62rem;
+  line-height: 1.2;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+
+.stick-pad i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 38%;
+  height: 38%;
+  margin: -19% 0 0 -19%;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.stick-pad.move i {
+  background: rgba(120, 200, 255, 0.7);
+  box-shadow: 0 0 12px rgba(69, 181, 255, 0.6);
+}
+
+.stick-pad.aim i {
+  background: rgba(255, 110, 80, 0.75);
+  box-shadow: 0 0 12px rgba(255, 90, 60, 0.6);
+}
+
+.stick-pad.active {
+  border-color: #ffb547;
 }
 
 /* Tactile */
@@ -1191,32 +1250,10 @@ h3 {
   background: rgba(255, 210, 94, 0.4);
 }
 
-.dpad {
-  --b: calc((var(--side, 150px) - 22px) / 3);
-  position: absolute;
-  left: 8px;
-  bottom: 10px;
-  display: grid;
-  grid-template-columns: repeat(3, var(--b));
-  grid-template-rows: repeat(3, var(--b));
-  gap: 3px;
-}
 
-.t-up {
-  grid-area: 1 / 2;
-}
 
-.t-left {
-  grid-area: 2 / 1;
-}
 
-.t-right {
-  grid-area: 2 / 3;
-}
 
-.t-down {
-  grid-area: 3 / 2;
-}
 
 .actions {
   position: absolute;
@@ -1240,19 +1277,13 @@ h3 {
   font-size: 0.66rem;
 }
 
-.actions .hold {
-  aspect-ratio: 1;
-  border-radius: 50% !important;
-  font-size: 1.1rem;
-}
 
-.actions .fire {
-  grid-column: 1 / -1;
-  height: 62px;
-  border-radius: 999px !important;
-  background: rgba(200, 50, 30, 0.65) !important;
-  font-family: "Black Ops One", system-ui;
-  font-size: 1.2rem;
+
+
+
+
+#stage.ingame #game {
+  cursor: none;
 }
 
 #rotate {
@@ -1365,13 +1396,6 @@ h3 {
     padding: 6px 8px;
   }
 
-  .stat.len b {
-    font-size: 1.1rem;
-  }
-
-  .stat .bar {
-    width: 70px;
-  }
 
   #killfeed {
     top: 4px;
@@ -1424,13 +1448,7 @@ h3 {
     padding: 10px 12px;
   }
 
-  .buy-item {
-    padding: 5px 8px;
-  }
 
-  .buy-item small {
-    display: none;
-  }
 }
 
 @media (pointer: coarse) and (orientation: portrait) {

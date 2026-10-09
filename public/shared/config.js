@@ -1,92 +1,74 @@
-export const TICK_MS = 170;
-
-export const DURATIONS = {
-  freeze: 5,
-  warmupRespawn: 2,
-  round: 90,
-  bomb: 45,
-  plant: 3,
-  defuse: 10,
-  defuseKit: 5,
-  result: 4.5,
-  matchOver: 11,
-  flash: 3.2,
-  smoke: 18
-};
-
-export function timings(tickMs = TICK_MS) {
-  const out = {};
-  for (const [key, sec] of Object.entries(DURATIONS)) out[key] = Math.max(1, Math.round((sec * 1000) / tickMs));
-  return out;
-}
-
-export const DIRS = [
-  { x: 0, y: -1 },
-  { x: 1, y: 0 },
-  { x: 0, y: 1 },
-  { x: -1, y: 0 }
-];
+export const TICK_MS = 50;
+export const DT = TICK_MS / 1000;
 
 export const CONFIG = {
-  startLength: 7,
-  winRounds: 5,
-  fireCooldown: 4,
-  minFireLength: 3,
-  bulletSpeed: 3,
-  bulletRange: 22,
-  staminaMax: 100,
-  boostCost: 5,
-  boostRestart: 25,
-  staminaRegen: 1.25,
-  grenadeSpeed: 2,
+  speed: 4,
+  turnRate: 9,
+  leaderRadius: 0.38,
+  soldierRadius: 0.36,
+  leaderHitRadius: 0.48,
+  assistCone: 0.16,
+  assistConeStick: 0.32,
+  assistRadius: 2.2,
+  spacing: 0.8,
+  startFollowers: 2,
+  maxFollowers: 12,
+  leaderHp: 100,
+  followerHp: 35,
+  followerDamage: 0.5,
+  followerRate: 0.5,
+  firingFollowers: 5,
+  spawnShield: 1.5,
+  respawn: 3,
+  matchTime: 240,
+  matchOver: 10,
+  countdown: 3,
+  scoreToWin: 25,
+  visionLeader: 8,
+  visionFollower: 3.5,
+  hearRadius: 11,
+  lootMax: 9,
+  lootEvery: 3,
+  goldenEvery: 40,
+  medkitHeal: 45,
+  tagChance: 0.4,
+  grenadeSpeed: 10,
   grenadeRange: 9,
-  heRadius: 2.7,
-  flashRadius: 7.5,
+  heRadius: 2.8,
+  heDamage: 80,
+  flashRadius: 7,
+  flashTime: 2.6,
   smokeRadius: 3.3,
-  bombRadius: 7.5,
-  crateGrow: 2,
-  maxPellets: 220,
-  money: { start: 800, max: 16000, win: 3250, loss: 1900, kill: 300, plant: 300, defuse: 300 }
+  smokeTime: 14
 };
 
-export const SHOP = [
-  { id: 'armor', label: 'Kevlar + casque', price: 650, desc: 'Encaisse un headshot ou une HE' },
-  { id: 'he', label: 'Grenade HE', price: 300, desc: 'Découpe tout dans la zone (G)' },
-  { id: 'flash', label: 'Flashbang', price: 200, desc: 'Aveugle les ennemis (F)' },
-  { id: 'smoke', label: 'Fumigène', price: 300, desc: 'Bloque la vue 18 s (C)' },
-  { id: 'ext', label: 'Chargeur étendu', price: 400, desc: '+5 segments pour ce round' },
-  { id: 'kit', label: 'Kit de désamorçage', price: 400, desc: 'Désamorce 2x plus vite', team: 'CT' }
-];
+export const WEAPONS = {
+  pistol: { name: 'Pistolet', dmg: 20, rate: 3.2, spread: 0.05, speed: 24, range: 14, mag: 12, reload: 1.1, pellets: 1, color: '#d6dde2' },
+  smg: { name: 'SMG', dmg: 13, rate: 8.5, spread: 0.13, speed: 24, range: 10, mag: 30, reload: 1.7, pellets: 1, color: '#7dd3fc' },
+  rifle: { name: 'AK-47', dmg: 24, rate: 5.5, spread: 0.07, speed: 28, range: 17, mag: 25, reload: 2.1, pellets: 1, color: '#f59e0b' },
+  shotgun: { name: 'Pompe', dmg: 12, rate: 1.3, spread: 0.3, speed: 22, range: 6.5, mag: 6, reload: 2.2, pellets: 6, color: '#ef4444' },
+  sniper: { name: 'AWP', dmg: 95, rate: 0.75, spread: 0.004, speed: 46, range: 30, mag: 5, reload: 2.6, pellets: 1, color: '#a78bfa' },
+  golden: { name: 'Deagle d\'or', dmg: 55, rate: 2.6, spread: 0.02, speed: 34, range: 20, mag: 9, reload: 1.1, pellets: 1, color: '#ffd25e' }
+};
+
+export const LOOT = {
+  recruit: { label: 'Recrue', weight: 5 },
+  medkit: { label: 'Soin', weight: 3 },
+  weapon: { label: 'Arme', weight: 3 },
+  he: { label: 'Grenade HE', weight: 1 },
+  flash: { label: 'Flashbang', weight: 1 },
+  smoke: { label: 'Fumigène', weight: 1 }
+};
+
+export const LOOT_WEAPONS = ['smg', 'rifle', 'shotgun', 'sniper'];
 
 export const DIFFICULTY = {
-  easy: { reaction: 6, fire: 0.3, aim: 0.12, chase: 0.25, mistake: 0.02, boost: 0.25, nade: 0.03 },
-  normal: { reaction: 3, fire: 0.55, aim: 0.35, chase: 0.5, mistake: 0.005, boost: 0.6, nade: 0.06 },
-  hard: { reaction: 1, fire: 0.9, aim: 0.7, chase: 0.7, mistake: 0, boost: 0.9, nade: 0.1 }
+  easy: { reaction: 0.9, fire: 0.55, spread: 0.38, lead: 0, aggro: 0.35, focus: 0.2 },
+  normal: { reaction: 0.55, fire: 0.75, spread: 0.26, lead: 0.3, aggro: 0.55, focus: 0.4 },
+  hard: { reaction: 0.3, fire: 0.95, spread: 0.13, lead: 0.7, aggro: 0.75, focus: 0.7 }
 };
 
 export const ZONE = { NONE: 0, A: 1, B: 2, T: 3, CT: 4 };
-
-export const SPAWNS = {
-  T: [
-    { x: 3, y: 11, d: 0 },
-    { x: 4, y: 18, d: 2 },
-    { x: 5, y: 11, d: 0 },
-    { x: 6, y: 18, d: 2 },
-    { x: 7, y: 11, d: 0 }
-  ],
-  CT: [
-    { x: 44, y: 11, d: 0 },
-    { x: 43, y: 18, d: 2 },
-    { x: 42, y: 11, d: 0 },
-    { x: 41, y: 18, d: 2 },
-    { x: 40, y: 11, d: 0 }
-  ]
-};
-
-export const T_ROUTES = {
-  A: [{ x: 20, y: 2 }, { x: 26, y: 14 }],
-  B: [{ x: 20, y: 26 }, { x: 26, y: 15 }]
-};
 
 export const BOT_NAMES = [
   'Albert', 'Bert', 'Cecil', 'Crusher', 'Elmer', 'Eugene', 'Fergus', 'Frasier', 'Gus', 'Harvey',
@@ -95,9 +77,8 @@ export const BOT_NAMES = [
 ];
 
 export const BOT_LINES = {
-  kill: ['ez', 'boom headshot', 'trop facile', 'nice', 'next', '1 tap', 'tu sors', 'gg ez', 'cheh'],
-  death: ['lag', 'wtf ??', 'nooon', 'il campe là', 'jsuis aveugle', 'ff', 'hacker', 'mon clavier a buggé', 'sérieux ?'],
-  plant: ['bombe posée, on tient !', 'C4 down', 'plant ok, défendez'],
-  win: ['gg', 'ez round', 'let\'s gooo', 'trop forts'],
-  start: ['rush B', 'rush B cyka', 'on tient A', 'go go go', 'je lurk', 'eco ?', 'full buy']
+  kill: ['ez', 'trop facile', 'nice', 'next', 'tu sors', 'gg ez', 'cheh', 'mon escouade te salue'],
+  death: ['lag', 'wtf ??', 'nooon', 'il campe là', 'jsuis aveugle', 'ff', 'hacker', 'sérieux ?', 'mes soldats m\'ont lâché'],
+  golden: ['le gold est à moi', 'DEAGLE D\'OR LETS GO', 'personne touche au gold'],
+  start: ['go go go', 'je prends le centre', 'on fonce', 'qui va au gold ?', 'je lurk']
 };
