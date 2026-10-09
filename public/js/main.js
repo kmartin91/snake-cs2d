@@ -1,4 +1,4 @@
-import { CONFIG, DIRS, DURATIONS, SHOP, TICK_MS, timings } from '../shared/config.js';
+import { CONFIG, DIRS, DURATIONS, SHOP, TICK_MS, ZONE, timings } from '../shared/config.js';
 import { Renderer, TEAM_COLORS, cellsOf } from './render.js';
 import { Hud } from './hud.js';
 import { Audio } from './audio.js';
@@ -27,6 +27,9 @@ let lastDefuseTick = 0;
 let paused = false;
 let chatOpen = false;
 let socket = null;
+let localDirs = [];
+let lastSpawnSeq = -1;
+const held = { boost: false, action: false };
 
 const menu = new Menu({
   solo: startSolo,
@@ -51,6 +54,7 @@ function onSnapshot(snap) {
   curr = snap;
   currAt = performance.now();
   if (!session) return;
+  reconcileDirs(snap);
   hud.update(snap, session.selfId);
   for (const ev of snap.ev) handleEvent(ev, snap);
 }
@@ -148,6 +152,44 @@ async function goOnline(kind, payload) {
     menu.error(err.message || 'Serveur injoignable');
     menu.setBusy(false);
   }
+}
+
+function reconcileDirs(snap) {
+  const self = snap.p.find((p) => p.id === session.selfId);
+  if (!self || !self.a || self.sq !== lastSpawnSeq) {
+    localDirs = [];
+    lastSpawnSeq = self ? self.sq : -1;
+    return;
+  }
+  const now = performance.now();
+  while (
+    localDirs.length &&
+    (localDirs[0].d === self.d || localDirs[0].d === (self.d + 2) % 4 || now - localDirs[0].at > snap.tk * 2 + 300)
+  ) {
+    localDirs.shift();
+  }
+}
+
+function trackDir(d) {
+  const self = selfPlayer();
+  if (!self || !self.a) return;
+  const last = localDirs.length ? localDirs[localDirs.length - 1].d : self.d;
+  if (d !== last && localDirs.length < 3) localDirs.push({ d, at: performance.now() });
+}
+
+function prediction(snap) {
+  const self = selfPlayer(snap);
+  if (!self || !self.a || !self.s.length) return null;
+  const pred = { id: self.id, dir: localDirs.length ? localDirs[0].d : self.d, k: 1, gb: self.gb };
+  if (snap.ph === 'freeze' || snap.ph === 'matchover') pred.k = 0;
+  const [hx, hy] = self.s;
+  const zone = renderer.map.zone[hy * renderer.map.width + hx];
+  const b = snap.bomb;
+  const planting = self.tm === 'T' && self.hb && (zone === ZONE.A || zone === ZONE.B) && snap.ph === 'live';
+  const defusing = self.tm === 'CT' && b.s === 'planted' && Math.max(Math.abs(hx - b.x), Math.abs(hy - b.y)) <= 1;
+  if (self.ac || (held.action && (planting || defusing))) pred.k = 0;
+  else if (pred.k && held.boost && (self.bo || self.st >= CONFIG.boostRestart)) pred.k = 2;
+  return pred;
 }
 
 function selfPlayer(snap = curr) {
@@ -333,7 +375,8 @@ function onKill(ev, snap, self) {
   const prevVictim = prev ? prev.p.find((p) => p.id === ev.victim) : null;
   const team = snap.p.find((p) => p.id === ev.victim)?.tm || prevVictim?.tm || 'T';
   const col = TEAM_COLORS[team];
-  const body = renderer.lastPaths.get(ev.victim) || (prevVictim ? cellsOf(prevVictim.s) : [{ x: ev.x, y: ev.y }]);
+  let body = renderer.lastPaths.get(ev.victim) || (prevVictim ? cellsOf(prevVictim.s) : []);
+  if (!body.length) body = [{ x: ev.x, y: ev.y }];
   for (const seg of body) {
     fx.burst(seg.x, seg.y, { n: 3, color: [col.main, col.light, col.dark], speed: 5, life: 0.7, size: 0.18, kind: 'blob' });
   }
@@ -401,7 +444,8 @@ function frame(now) {
   const dt = Math.min(0.05, (now - lastFrame) / 1000);
   lastFrame = now;
   const t = curr ? Math.max(0, Math.min(1, (now - currAt) / (curr.tk || TICK_MS))) : 0;
-  renderer.draw({ prev, curr, t, selfId: session ? session.selfId : null, now, dt });
+  const predict = session && curr ? prediction(curr) : null;
+  renderer.draw({ prev, curr, t, selfId: session ? session.selfId : null, now, dt, predict });
   bombSounds(now);
   requestAnimationFrame(frame);
 }
@@ -458,10 +502,19 @@ $('voiceBtn').addEventListener('click', () => {
 
 const inputs = bindInput(canvas, {
   active: () => Boolean(session) && !paused && !chatOpen,
-  dir: (d) => session.send(['d', d]),
+  dir: (d) => {
+    trackDir(d);
+    session.send(['d', d]);
+  },
   fire: (v) => session?.send(['f', v ? 1 : 0]),
-  boost: (v) => session?.send(['b', v ? 1 : 0]),
-  action: (v) => session?.send(['a', v ? 1 : 0]),
+  boost: (v) => {
+    held.boost = v;
+    session?.send(['b', v ? 1 : 0]);
+  },
+  action: (v) => {
+    held.action = v;
+    session?.send(['a', v ? 1 : 0]);
+  },
   nade: (g) => session.send(['g', g]),
   buy: (i) => {
     if (hud.isBuyOpen() && SHOP[i]) session.send(['buy', SHOP[i].id]);

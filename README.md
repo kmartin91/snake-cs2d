@@ -6,9 +6,10 @@ Counter-Strike, mais t'es un serpent. Jeu navigateur en solo contre des bots ou 
 
 - **T** : amène la bombe sur le site A ou B et maintiens `E` pour la poser. **CT** : maintiens `E` collé à la bombe pour la désamorcer (le kit divise le temps par deux).
 - Ta **longueur = ta vie et tes munitions** : chaque tir coûte un segment. Une balle coupe le serpent touché ; dans la tête c'est un headshot (sauf casque).
-- Foncer dans un corps ennemi ou dans le tien = mort. Tête contre tête, le plus long gagne. Les murs te font glisser, les coéquipiers sont traversables.
+- Foncer dans un mur, un corps ennemi ou le tien = mort. Tête contre tête, le plus long gagne. Les coéquipiers sont traversables.
+- Brouillard de guerre : tu ne vois qu'autour des serpents de ton équipe, les murs et les fumigènes bloquent la vue. Le serveur n'envoie pas les ennemis invisibles.
 - Économie façon CS pendant le freeze time (`B`) : kevlar, HE, flash, smoke, chargeur étendu, kit.
-- Rounds courts (60 s, bombe 15 s), changement de camp à la mi-temps, premier à 5.
+- Déplacement lent et case par case comme un snake classique : rounds de 1:30, bombe 45 s, pose 3 s, désamorçage 10 s (5 s avec kit). Changement de camp à la mi-temps, premier à 5.
 
 | Touche | Action |
 | --- | --- |
@@ -38,6 +39,6 @@ Puis [http://localhost:3000](http://localhost:3000). Le serveur sert la page et 
 
 ## Structure
 
-- `public/shared/` : moteur de jeu partagé client/serveur (règles, armes, objectifs, bots, carte).
+- `public/shared/` : moteur de jeu partagé client/serveur (règles, armes, objectifs, bots, carte, vision).
 - `public/js/` : rendu canvas, effets, sons synthétisés, HUD, menu, entrées, sessions locale/en ligne.
-- `server.js`, `server/rooms.js` : serveur Express + Socket.IO, salles et tick à 10 Hz.
+- `server.js`, `server/rooms.js` : serveur Express + Socket.IO, salles et tick à environ 6 Hz (170 ms par case).

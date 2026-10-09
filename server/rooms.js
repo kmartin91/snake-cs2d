@@ -36,9 +36,19 @@ export class RoomManager {
       winRounds: clampInt(winRounds, 2, 10, 5)
     });
     const room = { code, game, isPublic, sockets: new Set(), createdAt: Date.now() };
-    room.interval = setInterval(() => this.io.to(code).emit('s', game.step()), game.tickMs);
+    room.interval = setInterval(() => this.broadcast(room), game.tickMs);
     this.rooms.set(code, room);
     return room;
+  }
+
+  broadcast(room) {
+    const snap = room.game.step();
+    const views = {};
+    for (const id of room.sockets) {
+      const team = room.game.players.get(id)?.team || 'none';
+      if (!views[team]) views[team] = room.game.viewFor(snap, team === 'none' ? null : team);
+      this.io.to(id).emit('s', views[team]);
+    }
   }
 
   humans(room) {

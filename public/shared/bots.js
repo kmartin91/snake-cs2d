@@ -129,7 +129,11 @@ export function scanLine(p, d, range) {
 
 export function botThink(p, alive) {
   const ai = p.ai;
-  const D = DIFFICULTY[this.opts.difficulty];
+  const base = DIFFICULTY[this.opts.difficulty];
+  const D =
+    p.team === 'T' && this.bomb.state === 'planted'
+      ? { ...base, reaction: Math.max(1, base.reaction - 2), fire: Math.min(0.95, base.fire + 0.3), aim: Math.max(0.6, base.aim) }
+      : base;
   const h = p.snake[0];
   p.wantFire = false;
   p.queue.length = 0;
@@ -308,7 +312,7 @@ export function chooseGoal(p, alive) {
   const ai = p.ai;
   const b = this.bomb;
   const h = p.snake[0];
-  const enemies = alive.filter((o) => o.alive && o.team !== p.team);
+  const enemies = alive.filter((o) => o.alive && o.team !== p.team && this.canSee(p.team, o));
   const mates = alive.filter((o) => o.alive && o.team === p.team);
   const nearestEnemy = minBy(enemies, (o) => manh(o.snake[0], h));
   const enemyDist = nearestEnemy ? manh(nearestEnemy.snake[0], h) : Infinity;

@@ -120,6 +120,9 @@ export class Fx {
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  drawTexts(ctx, c) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const t of this.texts) {

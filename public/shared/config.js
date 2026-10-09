@@ -3,15 +3,15 @@ export const TICK_MS = 170;
 export const DURATIONS = {
   freeze: 5,
   warmupRespawn: 2,
-  round: 60,
-  bomb: 15,
-  plant: 1.5,
+  round: 90,
+  bomb: 45,
+  plant: 3,
   defuse: 10,
   defuseKit: 5,
   result: 4.5,
   matchOver: 11,
   flash: 3.2,
-  smoke: 12
+  smoke: 18
 };
 
 export function timings(tickMs = TICK_MS) {
@@ -53,14 +53,14 @@ export const SHOP = [
   { id: 'armor', label: 'Kevlar + casque', price: 650, desc: 'Encaisse un headshot ou une HE' },
   { id: 'he', label: 'Grenade HE', price: 300, desc: 'Découpe tout dans la zone (G)' },
   { id: 'flash', label: 'Flashbang', price: 200, desc: 'Aveugle les ennemis (F)' },
-  { id: 'smoke', label: 'Fumigène', price: 300, desc: 'Bloque la vue 12 s (C)' },
+  { id: 'smoke', label: 'Fumigène', price: 300, desc: 'Bloque la vue 18 s (C)' },
   { id: 'ext', label: 'Chargeur étendu', price: 400, desc: '+5 segments pour ce round' },
   { id: 'kit', label: 'Kit de désamorçage', price: 400, desc: 'Désamorce 2x plus vite', team: 'CT' }
 ];
 
 export const DIFFICULTY = {
-  easy: { reaction: 6, fire: 0.3, aim: 0.12, chase: 0.25, mistake: 0.04, boost: 0.25, nade: 0.03 },
-  normal: { reaction: 3, fire: 0.55, aim: 0.35, chase: 0.5, mistake: 0.012, boost: 0.6, nade: 0.06 },
+  easy: { reaction: 6, fire: 0.3, aim: 0.12, chase: 0.25, mistake: 0.02, boost: 0.25, nade: 0.03 },
+  normal: { reaction: 3, fire: 0.55, aim: 0.35, chase: 0.5, mistake: 0.005, boost: 0.6, nade: 0.06 },
   hard: { reaction: 1, fire: 0.9, aim: 0.7, chase: 0.7, mistake: 0, boost: 0.9, nade: 0.1 }
 };
 

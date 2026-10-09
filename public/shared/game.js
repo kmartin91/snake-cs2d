@@ -1,5 +1,6 @@
 import { DIRS, CONFIG, TICK_MS, timings, SHOP, DIFFICULTY, ZONE, SPAWNS, T_ROUTES, BOT_NAMES } from './config.js';
 import { MAP_ROWS, parseMap } from './map.js';
+import { computeVision, FOG_PHASES } from './vision.js';
 import { enemyOf, opposite, clamp, rand, pick, same, shuffle, flatten } from './utils.js';
 import * as bots from './bots.js';
 import * as combat from './combat.js';
@@ -88,6 +89,8 @@ export class Game {
       CT: { p: new Int16Array(n), s: new Int16Array(n) }
     };
     this.selfMark = new Int32Array(n);
+    this.vision = { T: new Uint8Array(n), CT: new Uint8Array(n) };
+    this.fogOn = false;
     this.selfStamp = 0;
     this.bfsSeen = new Int32Array(n);
     this.bfsFirst = new Int8Array(n);
@@ -672,6 +675,7 @@ export class Game {
         break;
       default:
     }
+    this.updateVision();
     const snap = this.snapshot();
     this.events = [];
     return snap;
@@ -801,7 +805,6 @@ export class Game {
       const h = m.snake[0];
       const D = DIRS[m.dir];
       m.nh = { x: h.x + D.x, y: h.y + D.y };
-      if (this.isWall(m.nh.x, m.nh.y)) this.slide(m);
     }
 
     const dead = new Map();
@@ -851,30 +854,6 @@ export class Game {
     }
 
     for (const [p, info] of dead) this.kill(p, info.killer, info.how);
-  }
-
-  slide(m) {
-    const h = m.snake[0];
-    const openness = (d, x, y) => {
-      let n = 0;
-      while (n < 6 && !this.isWall(x, y)) {
-        n += 1;
-        x += DIRS[d].x;
-        y += DIRS[d].y;
-      }
-      return n + Math.random() * 0.5;
-    };
-    let best = null;
-    for (const d of [(m.dir + 1) % 4, (m.dir + 3) % 4]) {
-      const x = h.x + DIRS[d].x;
-      const y = h.y + DIRS[d].y;
-      if (this.isWall(x, y) || this.hitsSelf(m, x, y)) continue;
-      const score = openness(d, x, y);
-      if (!best || score > best.score) best = { d, x, y, score };
-    }
-    if (!best) return;
-    m.dir = best.d;
-    m.nh = { x: best.x, y: best.y };
   }
 
   resolveHeadOn(m, enemies, dead) {
@@ -979,6 +958,47 @@ export class Game {
     }
   }
 
+  updateVision() {
+    this.fogOn = FOG_PHASES.has(this.phase);
+    if (!this.fogOn) return;
+    for (const team of ['T', 'CT']) {
+      const heads = [];
+      for (const p of this.players.values()) if (p.alive && p.team === team) heads.push(p.snake[0]);
+      computeVision(this.map, heads, this.smokes, this.vision[team]);
+    }
+  }
+
+  canSee(team, p) {
+    if (!this.fogOn || p.team === team) return true;
+    const mask = this.vision[team];
+    const w = this.map.width;
+    return p.snake.some((c) => mask[c.y * w + c.x] === 1);
+  }
+
+  viewFor(snap, team) {
+    if (!this.fogOn || !team) return snap;
+    if (![...this.players.values()].some((p) => p.alive && p.team === team)) return snap;
+    const mask = this.vision[team];
+    const w = this.map.width;
+    const seen = (x, y) => mask[y * w + x] === 1;
+    const enemy = team === 'T' ? 1 : 0;
+    const players = snap.p.map((p) => {
+      if (p.tm === team || !p.a) return p;
+      for (let i = 0; i < p.s.length; i += 2) if (seen(p.s[i], p.s[i + 1])) return p;
+      return { ...p, s: [], hb: 0, ac: null, h: 1 };
+    });
+    const bomb = { ...snap.bomb };
+    if (team === 'CT' && (bomb.s === 'ground' || bomb.s === 'carried') && !seen(bomb.x, bomb.y)) bomb.s = 'unknown';
+    return {
+      ...snap,
+      p: players,
+      bu: snap.bu.filter((b) => b[5] !== enemy || seen(b[1], b[2]) || seen(b[3], b[4])),
+      gr: snap.gr.filter((g) => g[6] !== enemy || seen(g[2], g[3]) || seen(g[4], g[5])),
+      bomb,
+      fog: 1
+    };
+  }
+
   snapshot() {
     const b = this.bomb;
     const defuser = b.defuser ? this.players.get(b.defuser) : null;
@@ -1027,7 +1047,7 @@ export class Game {
       cr: flatten(this.crates),
       pe: flatten(this.pellets),
       bu: this.bullets.map((x) => [x.id, x.x, x.y, x.px, x.py, x.team === 'T' ? 0 : 1, x.done ? 1 : 0]),
-      gr: this.grenades.map((g) => [g.id, g.type, g.x, g.y, g.px, g.py]),
+      gr: this.grenades.map((g) => [g.id, g.type, g.x, g.y, g.px, g.py, g.team === 'T' ? 0 : 1]),
       sm: this.smokes.map((s) => [s.x, s.y, s.ttl]),
       bomb: {
         s: b.state,

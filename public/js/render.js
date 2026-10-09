@@ -1,5 +1,6 @@
 import { CONFIG, DIRS, ZONE, timings } from '../shared/config.js';
 import { parseMap } from '../shared/map.js';
+import { computeVision } from '../shared/vision.js';
 import { Fx } from './fx.js';
 
 export const TEAM_COLORS = {
@@ -66,6 +67,81 @@ export class Renderer {
     this.lastPaths = new Map();
     this.T = timings();
     this.tickMs = 0;
+    const { width, height } = this.map;
+    const n = width * height;
+    this.fogCanvas = document.createElement('canvas');
+    this.fogCanvas.width = width;
+    this.fogCanvas.height = height;
+    this.fogCtx = this.fogCanvas.getContext('2d');
+    this.fogImg = this.fogCtx.createImageData(width, height);
+    this.fogFrom = new Float32Array(n);
+    this.fogTo = new Float32Array(n);
+    this.fogShown = new Float32Array(n);
+    this.visMask = new Uint8Array(n).fill(1);
+    this.fogTick = -1;
+  }
+
+  isWall(x, y) {
+    const { width, height, wall } = this.map;
+    return x < 0 || y < 0 || x >= width || y >= height || wall[y * width + x] === 1;
+  }
+
+  visible(x, y) {
+    return this.visMask[y * this.map.width + x] === 1;
+  }
+
+  updateFog(curr, team) {
+    if (curr.t === this.fogTick) return;
+    this.fogTick = curr.t;
+    this.fogFrom.set(this.fogShown);
+    if (!curr.fog || !team) {
+      this.visMask.fill(1);
+      this.fogTo.fill(0);
+      return;
+    }
+    const heads = curr.p.filter((p) => p.tm === team && p.a && p.s.length).map((p) => ({ x: p.s[0], y: p.s[1] }));
+    const smokes = curr.sm.map(([x, y]) => ({ x, y, r: CONFIG.smokeRadius }));
+    computeVision(this.map, heads, smokes, this.visMask);
+    for (let i = 0; i < this.visMask.length; i += 1) this.fogTo[i] = this.visMask[i] ? 0 : 0.8;
+  }
+
+  drawFog(t) {
+    const data = this.fogImg.data;
+    const k = Math.min(1, t * 1.6);
+    let any = false;
+    for (let i = 0; i < this.fogShown.length; i += 1) {
+      const a = this.fogFrom[i] + (this.fogTo[i] - this.fogFrom[i]) * k;
+      this.fogShown[i] = a;
+      if (a > 0.01) any = true;
+      data[i * 4] = 6;
+      data[i * 4 + 1] = 10;
+      data[i * 4 + 2] = 16;
+      data[i * 4 + 3] = Math.round(a * 255);
+    }
+    if (!any) return;
+    this.fogCtx.putImageData(this.fogImg, 0, 0);
+    const { width, height } = this.map;
+    const ctx = this.ctx;
+    ctx.imageSmoothingEnabled = true;
+    if ('filter' in ctx) ctx.filter = `blur(${Math.max(2, this.cell * 0.45).toFixed(1)}px)`;
+    ctx.drawImage(this.fogCanvas, 0, 0, width * this.cell, height * this.cell);
+    if ('filter' in ctx) ctx.filter = 'none';
+  }
+
+  predictSnake(cells, { dir, k, gb }, t) {
+    const D = DIRS[dir];
+    const future = [];
+    let { x, y } = cells[0];
+    for (let i = 0; i < k; i += 1) {
+      x += D.x;
+      y += D.y;
+      if (this.isWall(x, y)) break;
+      future.unshift({ x, y });
+    }
+    const kk = future.length;
+    if (!kk) return cells;
+    const grow = Math.min(gb, kk);
+    return samplePath(future.concat(cells), (1 - t) * kk, cells.length - 1 + kk - t * (kk - grow));
   }
 
   resize(cssW, cssH) {
@@ -220,21 +296,23 @@ export class Renderer {
     this.staticLayer = layer;
   }
 
-  snakePaths(prev, curr, t) {
+  snakePaths(prev, curr, t, predict) {
     const prevById = new Map(prev ? prev.p.map((p) => [p.id, p]) : []);
     const out = new Map();
     for (const p of curr.p) {
       if (!p.a || !p.s.length) continue;
       const cells = cellsOf(p.s);
       const pp = prevById.get(p.id);
-      const pts = pp && pp.a && pp.sq === p.sq ? interpSnake(cellsOf(pp.s), cells, p.mv, t) : cells;
+      let pts;
+      if (predict && predict.id === p.id) pts = this.predictSnake(cells, predict, t);
+      else pts = pp && pp.a && pp.sq === p.sq ? interpSnake(cellsOf(pp.s), cells, p.mv, t) : cells;
       out.set(p.id, pts);
     }
     this.lastPaths = out;
     return out;
   }
 
-  draw({ prev, curr, t, selfId, now, dt }) {
+  draw({ prev, curr, t, selfId, now, dt, predict }) {
     const ctx = this.ctx;
     const c = this.cell;
     if (!this.staticLayer) this.buildStatic();
@@ -252,8 +330,10 @@ export class Renderer {
       this.T = timings(curr.tk);
     }
 
-    const paths = this.snakePaths(prev, curr, t);
+    const paths = this.snakePaths(prev, curr, t, predict);
     const self = curr.p.find((p) => p.id === selfId);
+    const team = self ? self.tm : null;
+    this.updateFog(curr, team);
 
     this.drawBombZone(curr, now);
     this.drawPellets(curr.pe, now);
@@ -267,19 +347,22 @@ export class Renderer {
       if (pts) this.drawSnake(p, pts, p.id === selfId, now);
     }
 
-    if (curr.bomb.s === 'planted') this.drawBomb(curr, now);
     this.drawBullets(curr.bu, t);
     this.drawGrenades(curr.gr, t, now);
     this.fx.drawAbove(ctx, c);
     this.drawSmokes(curr.sm, now);
+    this.drawFog(t);
+    if (curr.bomb.s === 'planted' || (curr.bomb.s === 'ground' && team === 'T')) this.drawBomb(curr, now);
 
     const compact = c < 13;
     for (const p of curr.p) {
       const pts = paths.get(p.id);
       if (!pts) continue;
       if (compact && p.id !== selfId && !p.hb && !p.ac) continue;
+      if (p.tm !== team && !this.visible(p.s[0], p.s[1])) continue;
       this.drawTag(p, pts[0], p.id === selfId, curr, now);
     }
+    this.fx.drawTexts(ctx, c);
     if (self && self.a && curr.ph === 'freeze') {
       const pts = paths.get(self.id);
       if (pts) this.drawYou(pts[0], now);

@@ -9,7 +9,9 @@ export class LocalSession {
     this.game = new Game({ teamSize, difficulty, winRounds, bots: true });
     this.game.addPlayer({ id: this.selfId, name, team: team === 'T' || team === 'CT' ? team : null });
     this.timer = setInterval(() => {
-      if (!this.paused) this.onSnap(this.game.step());
+      if (this.paused) return;
+      const snap = this.game.step();
+      this.onSnap(this.game.viewFor(snap, this.game.players.get(this.selfId)?.team));
     }, this.game.tickMs);
   }
 
