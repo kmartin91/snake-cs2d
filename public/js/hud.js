@@ -1,5 +1,6 @@
 import { CONFIG, SHOP, TICK_MS, ZONE } from '../shared/config.js';
 import { parseMap } from '../shared/map.js';
+import { badgeHtml, dailiesHtml, rankName, xpToNext } from './progress.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -51,6 +52,9 @@ export class Hud {
   constructor({ onBuy }) {
     this.map = parseMap();
     this.onBuy = onBuy;
+    this.progress = null;
+    this.onReplay = null;
+    this.onMenu = null;
     this.el = {
       hud: $('hud'),
       scoreT: $('scoreT'),
@@ -381,16 +385,43 @@ export class Hud {
     target.innerHTML = this.scoreboardHtml();
   }
 
+  xpToast(amount, label) {
+    const feed = document.getElementById('xpFeed');
+    const li = document.createElement('li');
+    li.textContent = `+${amount} XP · ${label}`;
+    feed.append(li);
+    while (feed.children.length > 4) feed.firstChild.remove();
+    setTimeout(() => li.remove(), 1900);
+  }
+
   showMatchOver() {
     const snap = this.snap;
     const el = this.el.matchOver;
     const winner = snap.mw;
     const self = this.player(this.selfId);
     const won = self && self.tm === winner;
+    const p = this.progress;
+    let summary = '';
+    if (p) {
+      const s = p.s;
+      const lines = [...p.match.lines].map(([label, xp]) => `<li>${esc(label)}<b>+${xp}</b></li>`).join('');
+      summary = `<div class="xp-summary">
+        <div class="xp-head">${badgeHtml(s.level)}<span><b>${esc(rankName(s.level))}</b> · Niv. ${s.level}${s.streak > 1 ? ` · <span class="streak">🔥 ${s.streak}</span>` : ''}</span><span class="gain">+${p.match.xp} XP</span></div>
+        <span class="xpbar"><i style="width:${Math.round((100 * s.xp) / xpToNext(s.level))}%"></i></span>
+        ${lines ? `<ul class="xp-lines">${lines}</ul>` : ''}
+        <ul class="dailies">${dailiesHtml(p.dailies())}</ul>
+      </div>`;
+    }
     el.innerHTML = `<h2>${won ? 'VICTOIRE !' : 'DÉFAITE'}</h2>
       <div class="final-score"><span class="T">${snap.sc[0]}</span> — <span class="CT">${snap.sc[1]}</span></div>
+      ${summary}
       ${this.scoreboardHtml()}
-      <p class="muted">Nouveau match dans quelques secondes…</p>`;
+      <div class="end-buttons">
+        ${this.online ? '<p class="muted">Nouveau match automatique dans quelques secondes…</p>' : '<button class="btn primary big" id="replayBtn">Rejouer</button>'}
+        <button class="btn" id="endMenuBtn">Menu</button>
+      </div>`;
     el.classList.remove('hidden');
+    document.getElementById('replayBtn')?.addEventListener('click', () => this.onReplay?.());
+    document.getElementById('endMenuBtn').addEventListener('click', () => this.onMenu?.());
   }
 }

@@ -21,7 +21,13 @@ Counter-Strike, mais t'es un serpent. Jeu navigateur en solo contre des bots ou 
 | B puis 1-6 | Acheter |
 | Tab · Entrée · M · Échap | Scores · Chat · Son · Pause |
 
-Sur mobile : croix directionnelle, boutons d'action et swipe sur la carte.
+Sur mobile : plein écran et paysage obligatoire, croix directionnelle à gauche, actions à droite, swipe sur la carte. Sur iPhone, « Sur l'écran d'accueil » lance le jeu en plein écran (manifeste PWA).
+
+## Progression
+
+- XP et rangs CS (Silver I → The Global Elite), sauvegardés dans le navigateur. Bonus d'XP en Hardcore (×1.4) et en ligne (×1.2).
+- 11 skins de serpent à débloquer par niveau (Tigre, Néon, Asiimov, Fade, Dragon Lore, Arc-en-ciel…), visibles en ligne.
+- 3 défis du jour, série de victoires avec bonus, récap d'XP en fin de match et bouton « Rejouer ».
 
 ## Modes
 

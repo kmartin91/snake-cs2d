@@ -42,7 +42,7 @@ io.on('connection', (socket) => {
   socket.on('quick', (payload, ack) => {
     const room = rooms.quickMatch();
     if (!room) return reply(ack, { ok: false, error: 'Serveur plein' });
-    reply(ack, rooms.join(room, socket, safeName(payload?.name)));
+    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || '')));
   });
 
   socket.on('create', (payload, ack) => {
@@ -53,14 +53,14 @@ io.on('connection', (socket) => {
       winRounds: payload?.winRounds
     });
     if (!room) return reply(ack, { ok: false, error: 'Serveur plein' });
-    reply(ack, rooms.join(room, socket, safeName(payload?.name)));
+    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || '')));
   });
 
   socket.on('join', (payload, ack) => {
     const code = String(payload?.code || '').trim().toUpperCase();
     const room = rooms.rooms.get(code);
     if (!room) return reply(ack, { ok: false, error: `Salle ${code || '?'} introuvable` });
-    reply(ack, rooms.join(room, socket, safeName(payload?.name)));
+    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || '')));
   });
 
   socket.on('leave', () => rooms.leave(socket));

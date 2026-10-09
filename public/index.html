@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#0a0f13" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Snake CS2D" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Snake CS2D</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%90%8D%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -36,6 +43,7 @@
         <ul id="killfeed"></ul>
         <div id="announce"></div>
         <div id="hint"></div>
+        <ul id="xpFeed"></ul>
         <div id="deathCard" class="hidden"></div>
 
         <div id="chat">
@@ -65,6 +73,7 @@
           <button id="resumeBtn" class="btn primary">Reprendre</button>
           <button id="muteBtn" class="btn">Son : oui</button>
           <button id="voiceBtn" class="btn">Voix : oui</button>
+          <button id="fullscreenBtn" class="btn hidden">Plein écran</button>
           <button id="quitBtn" class="btn danger">Quitter la partie</button>
           <div class="keys compact" id="pauseKeys"></div>
         </section>
@@ -97,6 +106,15 @@
           <h1 class="logo">SNAKE<span>CS2D</span></h1>
           <p class="tagline">Counter-Strike, mais t'es un serpent. Ta longueur = ta vie <em>et</em> tes balles.</p>
 
+          <button id="profileCard" class="profile-card" type="button">
+            <span class="rank-badge" id="rankBadge">S1</span>
+            <span class="profile-info">
+              <span><b id="rankName">Silver I</b> · Niv. <b id="levelNum">1</b> <span id="streakTag" class="streak"></span></span>
+              <span class="xpbar"><i id="xpFill"></i></span>
+              <small id="xpText">0 / 80 XP</small>
+            </span>
+          </button>
+
           <label class="field">
             <span>Pseudo</span>
             <input id="nameInput" maxlength="16" placeholder="s1mple_snake" autocomplete="off" />
@@ -105,6 +123,7 @@
           <nav class="tabs">
             <button class="tab active" data-tab="solo">Solo vs bots</button>
             <button class="tab" data-tab="online">En ligne</button>
+            <button class="tab" data-tab="profile">Profil</button>
           </nav>
 
           <section class="tab-panel" id="tab-solo">
@@ -113,6 +132,7 @@
             <div class="opt"><span>Camp</span><div class="seg" data-opt="team"><button data-v="auto" class="on">Auto</button><button data-v="T">T</button><button data-v="CT">CT</button></div></div>
             <div class="opt"><span>Premier à</span><div class="seg" data-opt="winRounds"><button data-v="3">3</button><button data-v="5" class="on">5</button><button data-v="8">8</button></div></div>
             <button id="soloBtn" class="btn primary big">Jouer</button>
+            <p class="muted small" id="xpHint"></p>
           </section>
 
           <section class="tab-panel hidden" id="tab-online">
@@ -131,6 +151,16 @@
             </details>
             <h3>Salles publiques <button id="refreshBtn" class="link">↻</button></h3>
             <ul id="roomList"><li class="muted">—</li></ul>
+            <p class="muted small">Bonus XP en ligne : ×1.2</p>
+          </section>
+
+          <section class="tab-panel hidden" id="tab-profile">
+            <h3>Défis du jour <span class="muted small" id="dailyReset"></span></h3>
+            <ul id="dailyList" class="dailies"></ul>
+            <h3>Skins</h3>
+            <div id="skinGrid" class="skin-grid"></div>
+            <h3>Stats</h3>
+            <div id="statsGrid" class="stats-grid"></div>
           </section>
 
           <p id="menuError" class="error hidden"></p>
@@ -149,6 +179,13 @@
         </div>
       </section>
     </main>
+
+    <div id="rotate">
+      <div class="phone"></div>
+      <b>Tourne ton téléphone</b>
+      <span class="muted">Snake CS2D se joue en paysage.</span>
+      <span class="muted">Sur iPhone : Partager → « Sur l'écran d'accueil » pour jouer en plein écran.</span>
+    </div>
 
     <script type="module" src="/js/main.js"></script>
   </body>

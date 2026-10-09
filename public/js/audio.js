@@ -175,6 +175,13 @@ export class Audio {
       case 'tick':
         this.tone({ type: 'square', from: 1000, dur: 0.03, vol: 0.05 });
         break;
+      case 'levelup':
+        [523, 659, 784, 1046, 1318].forEach((f, i) => this.tone({ type: 'square', from: f, dur: 0.16, vol: 0.12, delay: i * 0.08 }));
+        this.tone({ type: 'triangle', from: 1568, dur: 0.6, vol: 0.18, delay: 0.42 });
+        break;
+      case 'xp':
+        this.tone({ type: 'triangle', from: 1200, to: 1600, dur: 0.06, vol: 0.06 });
+        break;
       case 'chat':
         this.tone({ from: 880, dur: 0.05, vol: 0.06 });
         break;

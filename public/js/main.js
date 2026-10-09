@@ -5,6 +5,7 @@ import { Audio } from './audio.js';
 import { Menu } from './menu.js';
 import { bindInput } from './input.js';
 import { LocalSession, DemoSession, OnlineSession, getSocket, request } from './net.js';
+import { Progress, SOLO_XP, ONLINE_XP, rankName } from './progress.js';
 
 const $ = (id) => document.getElementById(id);
 const DIFF_LABEL = { easy: 'Facile', normal: 'Normal', hard: 'Hardcore' };
@@ -15,6 +16,24 @@ const canvas = $('game');
 const renderer = new Renderer(canvas);
 const audio = new Audio();
 const hud = new Hud({ onBuy: (item) => session?.send(['buy', item]) });
+const progress = new Progress();
+hud.progress = progress;
+hud.onReplay = () => {
+  if (session && !session.online) session.restart();
+};
+hud.onMenu = () => leaveGame();
+progress.onGain = ({ amount, label, levelUps, unlocks }) => {
+  if (!session) return;
+  hud.xpToast(amount, label);
+  if (!levelUps.length) {
+    audio.play('xp');
+    return;
+  }
+  const level = levelUps[levelUps.length - 1];
+  const unlockText = unlocks.length ? ` · Skin débloqué : ${unlocks.map((u) => u.name).join(', ')} !` : '';
+  hud.announce(`NIVEAU ${level}`, `${rankName(level)}${unlockText}`, '#ffd25e', 3500);
+  audio.play('levelup');
+};
 
 let session = null;
 let demo = null;
@@ -31,21 +50,62 @@ let localDirs = [];
 let lastSpawnSeq = -1;
 const held = { boost: false, action: false };
 
-const menu = new Menu({
-  solo: startSolo,
-  quick: (name) => goOnline('quick', { name }),
-  create: (opts) => goOnline('create', opts),
-  join: (code, name) => goOnline('join', { code, name }),
-  refresh: refreshRooms
-});
+const menu = new Menu(
+  {
+    solo: startSolo,
+    quick: (name) => goOnline('quick', { name }),
+    create: (opts) => goOnline('create', opts),
+    join: (code, name) => goOnline('join', { code, name }),
+    refresh: refreshRooms
+  },
+  progress
+);
+
+const coarse = matchMedia('(pointer: coarse)');
+const portrait = matchMedia('(pointer: coarse) and (orientation: portrait)');
 
 function resize() {
-  const touch = matchMedia('(pointer: coarse)').matches;
-  const portrait = touch && stage.clientHeight > stage.clientWidth;
-  stage.classList.toggle('portrait', portrait);
-  if (portrait) renderer.resize(stage.clientWidth - 8, stage.clientHeight * 0.42);
-  else renderer.resize(stage.clientWidth - 16, stage.clientHeight - (touch ? 70 : 112));
+  if (coarse.matches) {
+    const side = Math.round(Math.min(150, Math.max(96, stage.clientWidth * 0.18)));
+    stage.style.setProperty('--side', `${side}px`);
+    renderer.resize(stage.clientWidth - side * 2, stage.clientHeight - 44);
+  } else {
+    renderer.resize(stage.clientWidth - 16, stage.clientHeight - 112);
+  }
 }
+
+function fullscreenSupported() {
+  const el = document.documentElement;
+  return Boolean(el.requestFullscreen || el.webkitRequestFullscreen);
+}
+
+function isFullscreen() {
+  return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function goFullscreen() {
+  if (!coarse.matches) return;
+  const lock = () => screen.orientation?.lock?.('landscape').catch(() => {});
+  const el = document.documentElement;
+  const request = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (isFullscreen() || !request) {
+    lock();
+    return;
+  }
+  Promise.resolve(request.call(el, { navigationUI: 'hide' }))
+    .then(lock)
+    .catch(() => {});
+}
+
+function syncPause() {
+  session?.setPaused(paused || portrait.matches);
+  if (portrait.matches) inputs.releaseAll();
+}
+
+portrait.addEventListener('change', () => {
+  syncPause();
+  resize();
+});
 window.addEventListener('resize', resize);
 resize();
 
@@ -55,8 +115,13 @@ function onSnapshot(snap) {
   currAt = performance.now();
   if (!session) return;
   reconcileDirs(snap);
+  hud.snap = snap;
+  hud.selfId = session.selfId;
+  for (const ev of snap.ev) {
+    handleEvent(ev, snap);
+    progress.handleEvent(ev, snap, session.selfId);
+  }
   hud.update(snap, session.selfId);
-  for (const ev of snap.ev) handleEvent(ev, snap);
 }
 
 function startDemo() {
@@ -88,6 +153,7 @@ function enterGame(newSession, roomInfo) {
   $('hud').classList.remove('hidden');
   $('pauseMenu').classList.add('hidden');
   audio.unlock();
+  syncPause();
 }
 
 function leaveGame(errorMsg = '') {
@@ -104,8 +170,11 @@ function leaveGame(errorMsg = '') {
 }
 
 function startSolo(opts) {
+  goFullscreen();
   audio.unlock();
-  const s = new LocalSession(opts, onSnapshot);
+  progress.setMultiplier(SOLO_XP[opts.difficulty] || 1);
+  progress.resetMatch();
+  const s = new LocalSession({ ...opts, skin: progress.s.skin }, onSnapshot);
   enterGame(s, { solo: true, label: `${opts.teamSize}v${opts.teamSize} · ${DIFF_LABEL[opts.difficulty]}` });
   hud.system('Mode solo — Échap pour mettre en pause.');
 }
@@ -136,13 +205,16 @@ async function refreshRooms() {
 }
 
 async function goOnline(kind, payload) {
+  goFullscreen();
   audio.unlock();
   menu.setBusy(true);
   menu.error('');
   try {
     const s = await ensureSocket();
-    const res = await request(s, kind, payload);
+    const res = await request(s, kind, { ...payload, skin: progress.s.skin });
     if (!res || !res.ok) throw new Error(res?.error || 'Impossible de rejoindre');
+    progress.setMultiplier(ONLINE_XP);
+    progress.resetMatch();
     const online = new OnlineSession(s, res, onSnapshot, (msg) => leaveGame(msg));
     online.onPing = (ms) => hud.setPing(ms);
     enterGame(online, { code: res.code });
@@ -480,8 +552,9 @@ $('chatInput').addEventListener('keydown', (e) => {
 function setPaused(value) {
   paused = value;
   $('pauseMenu').classList.toggle('hidden', !value);
-  session?.setPaused(value);
+  syncPause();
   if (value) inputs.releaseAll();
+  $('fullscreenBtn').classList.toggle('hidden', !coarse.matches || !fullscreenSupported() || isFullscreen());
   $('muteBtn').textContent = `Son : ${audio.muted ? 'non' : 'oui'}`;
   $('voiceBtn').textContent = `Voix : ${audio.voiceOn ? 'oui' : 'non'}`;
 }
@@ -494,6 +567,10 @@ $('quitBtn').addEventListener('click', () => {
 $('muteBtn').addEventListener('click', () => {
   audio.toggleMute();
   setPaused(true);
+});
+$('fullscreenBtn').addEventListener('click', () => {
+  goFullscreen();
+  setPaused(false);
 });
 $('voiceBtn').addEventListener('click', () => {
   audio.toggleVoice();
@@ -535,7 +612,14 @@ const inputs = bindInput(canvas, {
   }
 });
 
-document.addEventListener('pointerdown', () => audio.unlock(), { once: true });
+document.addEventListener(
+  'pointerdown',
+  () => {
+    audio.unlock();
+    goFullscreen();
+  },
+  { once: true }
+);
 
 startDemo();
 requestAnimationFrame(frame);

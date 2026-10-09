@@ -1,5 +1,8 @@
 import { store } from './audio.js';
 import { KEY_HELP } from './input.js';
+import { SKINS } from '../shared/skins.js';
+import { drawSkinPreview } from './render.js';
+import { SOLO_XP, badgeHtml, dailiesHtml, rankColor, rankName, rankShort, xpToNext } from './progress.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -14,8 +17,9 @@ const PHASES = {
 };
 
 export class Menu {
-  constructor(actions) {
+  constructor(actions, progress) {
     this.actions = actions;
+    this.progress = progress;
     this.el = $('menu');
     this.opts = {
       teamSize: '3',
@@ -44,6 +48,7 @@ export class Menu {
           for (const b of seg.querySelectorAll('button')) b.classList.toggle('on', b === btn);
           this.opts[key] = btn.dataset.v;
           store.set('scs-opts', this.opts);
+          this.updateXpHint();
         });
       }
     }
@@ -71,6 +76,9 @@ export class Menu {
       })
     );
     $('refreshBtn').addEventListener('click', () => actions.refresh());
+    $('profileCard').addEventListener('click', () => this.showTab('profile'));
+    this.updateXpHint();
+    this.renderProfile();
 
     const keys = KEY_HELP.map(([k, v]) => `<kbd>${esc(k)}</kbd><span>${esc(v)}</span>`).join('');
     $('menuKeys').innerHTML = keys;
@@ -101,12 +109,70 @@ export class Menu {
     for (const tab of document.querySelectorAll('.tab')) tab.classList.toggle('active', tab.dataset.tab === name);
     $('tab-solo').classList.toggle('hidden', name !== 'solo');
     $('tab-online').classList.toggle('hidden', name !== 'online');
+    $('tab-profile').classList.toggle('hidden', name !== 'profile');
     if (name === 'online') this.actions.refresh();
+    if (name === 'profile') this.renderProfile();
   }
 
   show() {
     this.el.classList.remove('hidden');
     this.setBusy(false);
+    this.renderProfile();
+  }
+
+  updateXpHint() {
+    const mult = SOLO_XP[this.opts.difficulty] || 1;
+    $('xpHint').textContent = `XP ×${mult}${mult > 1 ? ' — le Hardcore rapporte plus !' : mult < 1 ? ' — passe en Normal ou Hardcore pour plus d\'XP' : ''}`;
+  }
+
+  renderProfile() {
+    const s = this.progress.s;
+    const need = xpToNext(s.level);
+    const badge = $('rankBadge');
+    badge.textContent = rankShort(s.level);
+    badge.style.setProperty('--rc', rankColor(s.level));
+    $('rankName').textContent = rankName(s.level);
+    $('levelNum').textContent = s.level;
+    $('xpFill').style.width = `${Math.round((100 * s.xp) / need)}%`;
+    const next = this.progress.nextUnlock();
+    $('xpText').textContent = `${s.xp} / ${need} XP${next ? ` · Prochain skin : ${next.name} (niv. ${next.level})` : ''}`;
+    $('streakTag').textContent = s.streak > 1 ? `🔥 ${s.streak} victoires` : '';
+
+    const dailies = this.progress.dailies();
+    $('dailyList').innerHTML = dailiesHtml(dailies);
+    $('dailyReset').textContent = `${dailies.filter((d) => d.done).length}/3 · nouveaux défis à minuit`;
+
+    const grid = $('skinGrid');
+    grid.innerHTML = SKINS.map((sk) => {
+      const locked = sk.level > s.level;
+      return `<button class="skin ${sk.id === s.skin ? 'on' : ''} ${locked ? 'locked' : ''}" data-skin="${sk.id}" type="button">
+        <canvas></canvas><span>${esc(sk.name)}</span><small class="muted">${locked ? `🔒 niv. ${sk.level}` : sk.id === s.skin ? 'Équipé' : 'Débloqué'}</small></button>`;
+    }).join('');
+    for (const btn of grid.querySelectorAll('.skin')) {
+      drawSkinPreview(btn.querySelector('canvas'), btn.dataset.skin, 'T', 0);
+      btn.addEventListener('click', () => {
+        if (this.progress.setSkin(btn.dataset.skin)) this.renderProfile();
+      });
+    }
+
+    const st = s.stats;
+    const hs = st.kills ? Math.round((100 * st.headshots) / st.kills) : 0;
+    const kd = (st.kills / Math.max(1, st.deaths)).toFixed(2);
+    const cells = [
+      ['Matchs', st.matches],
+      ['Victoires', st.wins],
+      ['Kills', st.kills],
+      ['K/D', kd],
+      ['Headshots', `${hs}%`],
+      ['MVP', st.mvps],
+      ['Bombes posées', st.plants],
+      ['Désamorçages', st.defuses],
+      ['Record kills', st.bestKills],
+      ['Meilleure série', s.bestStreak],
+      ['XP totale', s.total],
+      ['Rang', badgeHtml(s.level, 'sm')]
+    ];
+    $('statsGrid').innerHTML = cells.map(([k, v]) => `<div><b>${v}</b>${k}</div>`).join('');
   }
 
   hide() {

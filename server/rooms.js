@@ -62,13 +62,13 @@ export class RoomManager {
     return candidates[0] || this.create({ isPublic: true, teamSize: PUBLIC_TEAM_SIZE, bots: true });
   }
 
-  join(room, socket, name) {
+  join(room, socket, name, skin) {
     if (this.humans(room) >= MAX_HUMANS) return { ok: false, error: 'Salle pleine' };
     this.leave(socket);
     room.sockets.add(socket.id);
     socket.join(room.code);
     socket.data.room = room.code;
-    const player = room.game.addPlayer({ id: socket.id, name });
+    const player = room.game.addPlayer({ id: socket.id, name, skin });
     return {
       ok: true,
       code: room.code,

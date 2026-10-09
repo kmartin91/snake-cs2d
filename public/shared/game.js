@@ -1,6 +1,7 @@
 import { DIRS, CONFIG, TICK_MS, timings, SHOP, DIFFICULTY, ZONE, SPAWNS, T_ROUTES, BOT_NAMES } from './config.js';
 import { MAP_ROWS, parseMap } from './map.js';
 import { computeVision, FOG_PHASES } from './vision.js';
+import { SKINS, SKIN_IDS } from './skins.js';
 import { enemyOf, opposite, clamp, rand, pick, same, shuffle, flatten } from './utils.js';
 import * as bots from './bots.js';
 import * as combat from './combat.js';
@@ -9,6 +10,7 @@ import * as objectives from './objectives.js';
 function createPlayer(id, name, bot, team) {
   return {
     id,
+    skin: 'classic',
     name,
     bot,
     team,
@@ -216,7 +218,7 @@ export class Game {
     return null;
   }
 
-  addPlayer({ id, name, bot = false, team = null }) {
+  addPlayer({ id, name, bot = false, team = null, skin = 'classic' }) {
     if (this.players.has(id)) return this.players.get(id);
 
     let chosen = team === 'T' || team === 'CT' ? team : null;
@@ -235,6 +237,7 @@ export class Game {
 
     const cleanName = String(name || 'Joueur').replace(/\s+/g, ' ').trim().slice(0, 16) || 'Joueur';
     const p = createPlayer(id, cleanName, bot, chosen);
+    p.skin = SKIN_IDS.has(skin) ? skin : 'classic';
     this.players.set(id, p);
 
     if (!bot) {
@@ -303,6 +306,7 @@ export class Game {
         const name = `BOT ${free.length ? pick(free) : `${pick(BOT_NAMES)}${rand(99)}`}`;
         this.botSeq += 1;
         const b = createPlayer(`bot-${this.botSeq}`, name, true, team);
+        b.skin = Math.random() < 0.45 ? 'classic' : pick(SKINS).id;
         this.players.set(b.id, b);
         bots.push(b);
       }
@@ -1031,7 +1035,8 @@ export class Game {
         hb: p.hasBomb ? 1 : 0,
         gb: p.growBy,
         pg: p.ping,
-        rs: p.respawn
+        rs: p.respawn,
+        sk: p.skin
       });
     }
     return {
