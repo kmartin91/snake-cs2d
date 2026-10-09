@@ -1,11 +1,13 @@
 :root {
-  --bg: #0b1116;
-  --hud: rgba(12, 20, 26, 0.86);
-  --hud-border: #284554;
-  --text: #edf5f8;
-  --muted: #9ab2bc;
-  --t: #ff724f;
-  --ct: #62cfff;
+  --bg: #0a0f13;
+  --panel: rgba(10, 16, 21, 0.82);
+  --border: rgba(255, 255, 255, 0.1);
+  --text: #eef4f6;
+  --muted: #93a7b1;
+  --t: #ff7a45;
+  --ct: #45b5ff;
+  --gold: #ffd25e;
+  --danger: #ff4b3a;
 }
 
 * {
@@ -18,32 +20,48 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-}
-
-body {
-  font-family: "Space Mono", monospace;
+  background: var(--bg);
   color: var(--text);
-  background:
-    radial-gradient(circle at 10% 0%, #1b2f39 0, transparent 38%),
-    radial-gradient(circle at 100% 100%, #2f4451 0, transparent 32%),
-    linear-gradient(180deg, #06090c, var(--bg));
+  font-family: "Space Mono", ui-monospace, monospace;
   overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.app-shell {
-  width: 100%;
-  height: 100%;
-  padding: 0.65rem;
+button,
+input {
+  font: inherit;
+  color: inherit;
 }
 
-.stage {
-  width: 100%;
-  height: 100%;
+.hidden {
+  display: none !important;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 0.35em;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-bottom-width: 3px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.78em;
+  text-align: center;
+  line-height: 1.5;
+}
+
+#stage {
   position: relative;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid #2a4c5f;
-  background: #0a1319;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(circle at 20% 10%, #1d2b33 0, transparent 45%),
+    radial-gradient(circle at 90% 90%, #2a1f17 0, transparent 40%),
+    var(--bg);
 }
 
 #game {
@@ -52,308 +70,1025 @@ body {
   top: 50%;
   transform: translate(-50%, -50%);
   display: block;
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
   touch-action: none;
+}
+
+.panel,
+.hud-top .team,
+.hud-top .clock,
+#status,
+.room-tag {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* HUD */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#hud .panel,
+#hud button,
+#hud input,
+#roomTag {
+  pointer-events: auto;
 }
 
 .hud-top {
   position: absolute;
-  top: 0.6rem;
+  top: 8px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(760px, calc(100% - 1.2rem));
-  display: grid;
-  grid-template-columns: 130px 1fr 130px;
-  align-items: center;
-  gap: 0.65rem;
-}
-
-.team-score,
-.hud-center,
-.hud-left,
-.hud-right,
-.hud-bottom,
-.join-panel,
-.rules-modal {
-  background: var(--hud);
-  border: 1px solid var(--hud-border);
-  backdrop-filter: blur(4px);
-}
-
-.team-score {
-  border-radius: 12px;
-  padding: 0.4rem 0.6rem;
   display: flex;
-  justify-content: space-between;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.hud-top .team {
+  display: flex;
   align-items: center;
-  font-family: "Black Ops One", system-ui;
-  letter-spacing: 0.04em;
-  font-size: 1.15rem;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  min-width: 120px;
 }
 
-.team-score .name {
-  font-size: 0.8rem;
-  font-family: "Space Mono", monospace;
+.hud-top .team.t {
+  border-color: color-mix(in srgb, var(--t), transparent 40%);
+  justify-content: flex-start;
 }
 
-.team-t {
-  border-color: color-mix(in srgb, var(--t), transparent 38%);
+.hud-top .team.ct {
+  border-color: color-mix(in srgb, var(--ct), transparent 40%);
+  justify-content: flex-end;
 }
 
-.team-ct {
-  border-color: color-mix(in srgb, var(--ct), transparent 38%);
-}
-
-.hud-center {
-  border-radius: 12px;
-  text-align: center;
-  padding: 0.35rem 0.5rem;
-}
-
-.hud-center h1 {
-  margin: 0;
-  font-size: 1rem;
-  letter-spacing: 0.07em;
-  font-family: "Black Ops One", system-ui;
-}
-
-.hud-center p {
-  margin: 0.14rem 0 0;
-  color: var(--muted);
+.hud-top .side {
   font-size: 0.75rem;
-}
-
-.hud-right {
-  position: absolute;
-  right: 0.6rem;
-  top: 4.85rem;
-  width: 270px;
-  border-radius: 12px;
-  padding: 0.58rem;
-  max-height: calc(100% - 10.7rem);
-  overflow: auto;
-}
-
-.hud-left {
-  position: absolute;
-  left: 0.6rem;
-  top: 4.85rem;
-  width: 270px;
-  border-radius: 12px;
-  padding: 0.58rem;
-}
-
-.hud-left h2,
-.hud-right h2 {
-  margin: 0 0 0.45rem;
-  font-size: 0.83rem;
   color: var(--muted);
 }
 
-.hud-left p {
-  margin: 0.28rem 0;
-  color: var(--muted);
-  font-size: 0.73rem;
-  line-height: 1.35;
+.hud-top strong {
+  font-family: "Black Ops One", system-ui;
+  font-size: 1.6rem;
+  line-height: 1;
 }
 
-#leaderboard {
+.team.t strong {
+  color: var(--t);
+}
+
+.team.ct strong {
+  color: var(--ct);
+}
+
+.dots {
+  display: flex;
+  gap: 3px;
+}
+
+.dots i {
+  width: 9px;
+  height: 14px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.team.t .dots {
+  color: var(--t);
+}
+
+.team.ct .dots {
+  color: var(--ct);
+}
+
+.dots i.dead {
+  opacity: 0.2;
+}
+
+.hud-top .clock {
+  border-radius: 10px;
+  padding: 3px 16px;
+  text-align: center;
+  min-width: 132px;
+}
+
+#timer {
+  font-family: "Black Ops One", system-ui;
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+#timer.planted {
+  color: var(--danger);
+  animation: blink 0.5s steps(2) infinite;
+}
+
+#timer.low {
+  color: var(--danger);
+}
+
+#phase {
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.room-tag {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.room-tag:empty {
+  display: none;
+}
+
+.room-tag b {
+  font-family: "Black Ops One", system-ui;
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+}
+
+.room-tag button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+#killfeed {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  gap: 0.25rem;
-}
-
-#leaderboard li {
   display: flex;
-  justify-content: space-between;
-  gap: 0.3rem;
-  padding: 0.34rem 0.45rem;
-  border-radius: 8px;
-  border: 1px solid #2a4250;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 46vw;
+}
+
+#killfeed li {
+  background: rgba(8, 12, 16, 0.78);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
   font-size: 0.74rem;
-}
-
-.hud-bottom {
-  position: absolute;
-  left: 0.6rem;
-  right: 0.6rem;
-  bottom: 0.6rem;
-  border-radius: 12px;
-  padding: 0.46rem 0.7rem;
-  color: var(--muted);
-  font-size: 0.77rem;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  animation: slideIn 0.18s ease-out;
 }
 
-.join-panel,
-.rules-modal {
+#killfeed li.mine {
+  border-color: #e23b2a;
+  box-shadow: inset 0 0 0 1px rgba(226, 59, 42, 0.5);
+}
+
+#killfeed .T {
+  color: var(--t);
+  font-weight: 700;
+}
+
+#killfeed .CT {
+  color: var(--ct);
+  font-weight: 700;
+}
+
+#killfeed .how {
+  margin: 0 6px;
+  opacity: 0.9;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(20px);
+    opacity: 0;
+  }
+}
+
+#announce {
+  position: absolute;
+  top: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-family: "Black Ops One", system-ui;
+  pointer-events: none;
+  width: 100%;
+}
+
+#announce .big {
+  font-size: clamp(1.8rem, 5vw, 3.6rem);
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.45), 0 0 30px rgba(0, 0, 0, 0.6);
+  animation: pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+#announce .small {
+  font-family: "Space Mono", monospace;
+  font-size: clamp(0.8rem, 1.8vw, 1.05rem);
+  margin-top: 4px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+@keyframes pop {
+  from {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+#hint {
+  position: absolute;
+  bottom: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.82rem;
+  background: rgba(8, 12, 16, 0.75);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 14px;
+  white-space: nowrap;
+}
+
+#hint:empty {
+  display: none;
+}
+
+#hint.alert {
+  border-color: var(--danger);
+  color: #ffd6d0;
+}
+
+#deathCard {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  background: rgba(30, 6, 6, 0.75);
+  border: 1px solid rgba(255, 75, 58, 0.5);
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 0.85rem;
+}
+
+#deathCard b {
+  display: block;
+  font-family: "Black Ops One", system-ui;
+  font-size: 1.4rem;
+  color: var(--danger);
+}
+
+#chat {
+  position: absolute;
+  left: 8px;
+  bottom: 74px;
+  width: min(380px, 60vw);
+}
+
+#chatLog {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  font-size: 0.74rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#chatLog li {
+  text-shadow: 0 1px 3px #000, 0 0 2px #000;
+  transition: opacity 0.6s;
+}
+
+#chatLog li.old {
+  opacity: 0;
+}
+
+#chatLog .T {
+  color: var(--t);
+}
+
+#chatLog .CT {
+  color: var(--ct);
+}
+
+#chatLog .sys {
+  color: var(--gold);
+}
+
+#chatInput {
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--gold);
+  background: rgba(8, 12, 16, 0.9);
+  outline: none;
+}
+
+#status {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stat.len b {
+  font-family: "Black Ops One", system-ui;
+  font-size: 1.5rem;
+  min-width: 2ch;
+}
+
+.stat.len.low b {
+  color: var(--danger);
+}
+
+.stat .bar {
+  width: 90px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.stat .bar i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #3fd1ff, #a7ff6a);
+  transition: width 0.1s linear;
+}
+
+.stat .bar.locked i {
+  background: #6b7a82;
+}
+
+.stat.money b {
+  color: #8ff08f;
+  font-size: 1.05rem;
+}
+
+.items {
+  display: flex;
+  gap: 4px;
+}
+
+.items span {
+  font-size: 0.68rem;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  opacity: 0.3;
+}
+
+.items span.on {
+  opacity: 1;
+  border-color: rgba(255, 210, 94, 0.55);
+}
+
+.panel {
   position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
   border-radius: 14px;
-  padding: 1rem;
-  width: min(380px, calc(100% - 1.3rem));
-  z-index: 5;
+  padding: 14px 16px;
+  width: min(460px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
 }
 
-.join-panel h2,
-.rules-modal h2 {
-  margin: 0 0 0.65rem;
+.panel h2 {
+  margin: 0 0 10px;
   font-family: "Black Ops One", system-ui;
-  font-size: 1.05rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
 }
 
-.join-panel label {
-  font-size: 0.82rem;
-  color: var(--muted);
+#buyMenu header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
 }
 
-.join-panel input,
-.join-panel button,
-.rules-modal button {
-  width: 100%;
-  margin-top: 0.5rem;
-  padding: 0.62rem 0.7rem;
-  border-radius: 10px;
-  border: 1px solid #2d4f61;
-  background: #0f1b22;
-  color: var(--text);
-  font: inherit;
+#buyMoney {
+  color: #8ff08f;
+  font-size: 1.2rem;
 }
 
-.join-panel button,
-.rules-modal button {
-  border-color: #3e6a82;
-  background: linear-gradient(130deg, #1d4e6c, #19415a);
+#buyList {
+  display: grid;
+  gap: 6px;
+}
+
+.buy-item {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
 }
 
-.rules-modal p {
-  margin: 0.32rem 0;
+.buy-item:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(255, 210, 94, 0.08);
+}
+
+.buy-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.buy-item small {
+  display: block;
   color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.buy-item .price {
+  color: #8ff08f;
+}
+
+#scoreboard,
+#matchOver {
+  width: min(720px, calc(100% - 24px));
+}
+
+.sb-team {
+  margin-bottom: 10px;
+}
+
+.sb-team h3 {
+  margin: 0 0 4px;
+  font-family: "Black Ops One", system-ui;
+  font-weight: 400;
+  font-size: 1rem;
+}
+
+.sb-team.T h3 {
+  color: var(--t);
+}
+
+.sb-team.CT h3 {
+  color: var(--ct);
+}
+
+.sb-team table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.sb-team th {
+  text-align: right;
+  color: var(--muted);
+  font-weight: 400;
+  padding: 2px 6px;
+}
+
+.sb-team td {
+  text-align: right;
+  padding: 3px 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sb-team th:first-child,
+.sb-team td:first-child {
+  text-align: left;
+}
+
+.sb-team tr.me td {
+  background: rgba(255, 228, 107, 0.1);
+}
+
+.sb-team tr.dead td {
+  opacity: 0.5;
+}
+
+.final-score {
+  font-family: "Black Ops One", system-ui;
+  font-size: 2.6rem;
+  text-align: center;
+  margin: 4px 0 10px;
+}
+
+.final-score .T {
+  color: var(--t);
+}
+
+.final-score .CT {
+  color: var(--ct);
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: transform 0.08s, background 0.15s;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn.primary {
+  border-color: #ffb547;
+  background: linear-gradient(135deg, #ff8a3d, #e2551c);
+  color: #fff;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.btn.primary:hover {
+  background: linear-gradient(135deg, #ff9b55, #ee6227);
+}
+
+.btn.big {
+  font-family: "Black Ops One", system-ui;
+  font-size: 1.25rem;
+  letter-spacing: 0.06em;
+  padding: 12px;
+}
+
+.btn.danger {
+  border-color: rgba(255, 75, 58, 0.5);
+  color: #ffb3aa;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Menu */
+
+#menu {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 16px;
+  background:
+    linear-gradient(180deg, rgba(10, 15, 19, 0.55), rgba(10, 15, 19, 0.92)),
+    repeating-linear-gradient(45deg, rgba(255, 180, 90, 0.03) 0 12px, transparent 12px 24px);
+}
+
+.menu-card {
+  width: min(520px, 100%);
+  background: rgba(12, 18, 23, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 20px 22px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+.logo {
+  margin: 0;
+  font-family: "Black Ops One", system-ui;
+  font-weight: 400;
+  font-size: clamp(2.4rem, 9vw, 3.6rem);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: #f4e4c4;
+  text-shadow: 3px 3px 0 #8a4b1c, 6px 6px 0 rgba(0, 0, 0, 0.4);
+}
+
+.logo span {
+  display: inline-block;
+  margin-left: 0.25em;
+  color: var(--t);
+  transform: rotate(-4deg);
+}
+
+.tagline {
+  margin: 8px 0 16px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.field input,
+#codeInput {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  outline: none;
+  font-size: 1rem;
+}
+
+.field input:focus,
+#codeInput:focus {
+  border-color: var(--gold);
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 16px 0 10px;
+}
+
+.tab {
+  padding: 9px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.tab.active {
+  background: rgba(255, 210, 94, 0.12);
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.seg {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.seg button {
+  border: 0;
+  background: transparent;
+  padding: 6px 10px;
+  cursor: pointer;
   font-size: 0.8rem;
 }
 
-.hidden {
-  display: none;
+.seg button + button {
+  border-left: 1px solid var(--border);
 }
 
-.touch-controls {
-  position: absolute;
-  left: 0.6rem;
-  right: 0.6rem;
-  bottom: 3.7rem;
-  display: none;
+.seg button.on {
+  background: rgba(255, 210, 94, 0.18);
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.row {
+  display: grid;
   grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.row .btn {
+  margin-top: 0;
+  width: auto;
+}
+
+#codeInput {
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-family: "Black Ops One", system-ui;
+}
+
+details.create {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+h3 {
+  font-size: 0.85rem;
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.link {
+  border: 0;
+  background: none;
+  color: var(--gold);
+  cursor: pointer;
+}
+
+#roomList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+#roomList li {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
+  font-size: 0.78rem;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+#roomList li.muted {
+  border: 0;
+}
+
+#roomList button {
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  background: transparent;
+  border-radius: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.error {
+  margin: 10px 0 0;
+  color: #ffb3aa;
+  font-size: 0.82rem;
+}
+
+.help {
+  margin-top: 14px;
+  color: var(--muted);
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  margin: 10px 0;
+  font-size: 0.76rem;
+  align-items: center;
+}
+
+.keys.compact {
+  margin-top: 14px;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.rules {
+  padding-left: 18px;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+/* Tactile */
+
+#touch {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 10px 64px;
+  pointer-events: none;
+}
+
+#touch button {
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(10, 16, 21, 0.6);
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+#touch button.active {
+  background: rgba(255, 210, 94, 0.35);
 }
 
 .dpad {
   display: grid;
-  grid-template-columns: repeat(3, minmax(46px, 62px));
-  grid-template-rows: repeat(3, minmax(46px, 62px));
-  gap: 0.45rem;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: repeat(3, 52px);
+  gap: 4px;
 }
 
-.touch-btn {
-  border: 1px solid #2b556b;
-  background: linear-gradient(160deg, #122f3f, #0c1e2a);
-  color: #dceef6;
-  border-radius: 12px;
-  font: 700 1rem "Space Mono", monospace;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
+.t-up {
+  grid-area: 1 / 2;
 }
 
-.touch-btn:active,
-.touch-btn.active {
-  background: linear-gradient(160deg, #1e4f69, #16384b);
+.t-left {
+  grid-area: 2 / 1;
 }
 
-.touch-btn.up {
-  grid-column: 2;
-  grid-row: 1;
+.t-right {
+  grid-area: 2 / 3;
 }
 
-.touch-btn.left {
-  grid-column: 1;
-  grid-row: 2;
+.t-down {
+  grid-area: 3 / 2;
 }
 
-.touch-btn.down {
-  grid-column: 2;
-  grid-row: 2;
+.actions {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  grid-template-rows: auto auto;
+  gap: 6px;
+  align-items: end;
 }
 
-.touch-btn.right {
-  grid-column: 3;
-  grid-row: 2;
+.actions .nades {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
 }
 
-.touch-btn.action {
-  min-width: 110px;
-  min-height: 110px;
-  border-radius: 999px;
-  border-color: #7e3a2f;
-  background: linear-gradient(160deg, #603028, #3f1f1b);
+.actions .nades button {
+  width: 42px;
+  height: 34px;
+  font-size: 0.7rem;
 }
 
-@media (max-width: 980px) {
-  .app-shell {
-    padding: 0;
+.actions .hold {
+  width: 60px;
+  height: 60px;
+  border-radius: 50% !important;
+}
+
+.actions .fire {
+  width: 84px;
+  height: 84px;
+  background: rgba(200, 50, 30, 0.55) !important;
+}
+
+@media (pointer: coarse) {
+  #touch {
+    display: flex;
   }
 
-  .stage {
-    border-radius: 0;
-    border: none;
+  #status {
+    bottom: 4px;
+    gap: 8px;
+    padding: 5px 8px;
   }
 
-  .hud-right {
+  .items {
     display: none;
   }
 
-  .hud-left {
+  #chat {
+    bottom: 200px;
+  }
+
+  #hint {
+    bottom: 160px;
+  }
+}
+
+@media (max-width: 720px) {
+  .hud-top .team {
+    min-width: 0;
+    padding: 3px 6px;
+  }
+
+  .dots {
     display: none;
   }
 
-  .hud-top {
-    width: calc(100% - 0.6rem);
-    top: 0.3rem;
-    grid-template-columns: 92px 1fr 92px;
-    gap: 0.3rem;
+  .room-tag {
+    top: auto;
+    bottom: 56px;
+    left: 8px;
   }
 
-  .team-score {
-    font-size: 0.95rem;
-    padding: 0.3rem 0.45rem;
+  #killfeed {
+    top: 64px;
   }
 
-  .team-score .name {
-    font-size: 0.68rem;
-  }
-
-  .hud-center h1 {
-    font-size: 0.82rem;
-  }
-
-  .hud-center p {
+  #killfeed li {
     font-size: 0.64rem;
   }
+}
 
-  .hud-bottom {
-    left: 0.3rem;
-    right: 0.3rem;
-    bottom: 0.3rem;
-    padding: 0.38rem 0.5rem;
-    font-size: 0.67rem;
-  }
+#stage.portrait #game {
+  top: 92px;
+  transform: translateX(-50%);
+}
 
-  .touch-controls {
-    display: grid;
-  }
+#stage.portrait .room-tag {
+  top: 62px;
+  bottom: auto;
+  padding: 3px 8px;
+}
+
+#stage.portrait .room-tag button {
+  display: none;
+}
+
+#stage.portrait #killfeed {
+  top: 62px;
+}
+
+#stage.portrait #deathCard,
+#stage.portrait #announce {
+  top: 96px;
+}
+
+#stage.portrait #deathCard {
+  padding: 6px 12px;
+  font-size: 0.7rem;
+}
+
+#stage.portrait #deathCard b {
+  font-size: 1rem;
+}
+
+#stage.portrait #chat {
+  top: calc(92px + 42vh + 8px);
+  bottom: auto;
+  width: calc(100% - 16px);
+}
+
+#stage.portrait #hint {
+  top: calc(92px + 42vh + 70px);
+  bottom: auto;
+}
+
+#stage.portrait #touch {
+  padding-bottom: 70px;
 }

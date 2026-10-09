@@ -1,56 +1,43 @@
 # Snake CS2D
 
-A multiplayer browser game that mixes Snake with Counter-Strike objectives.
+Counter-Strike, mais t'es un serpent. Jeu navigateur en solo contre des bots ou en ligne entre potes.
 
-## Gameplay Mix
+## Le jeu
 
-- Players are auto-assigned to `T` (Terrorists) or `CT` (Counter-Terrorists).
-- Each player is a snake that grows by collecting ammo crates.
-- `T` players must pick up the bomb, enter center site zone, and hold `E` to plant.
-- `CT` players must hold `E` on the planted bomb to defuse.
-- Round timer is 45s, bomb timer is 15s, plant/defuse are 3s each.
-- Mobile is supported with on-screen directional buttons and a hold action button.
-- Snake collision rules still apply: hit a body/head, die, then respawn.
-- Rounds score by objective and eliminations, first team to 13 rounds wins.
-- Sides swap after 12 completed rounds.
+- **T** : amène la bombe sur le site A ou B et maintiens `E` pour la poser. **CT** : maintiens `E` collé à la bombe pour la désamorcer (le kit divise le temps par deux).
+- Ta **longueur = ta vie et tes munitions** : chaque tir coûte un segment. Une balle coupe le serpent touché ; dans la tête c'est un headshot (sauf casque).
+- Foncer dans un corps ennemi ou dans le tien = mort. Tête contre tête, le plus long gagne. Les murs te font glisser, les coéquipiers sont traversables.
+- Économie façon CS pendant le freeze time (`B`) : kevlar, HE, flash, smoke, chargeur étendu, kit.
+- Rounds courts (60 s, bombe 15 s), changement de camp à la mi-temps, premier à 5.
 
-## Run Locally
+| Touche | Action |
+| --- | --- |
+| ZQSD / WASD / flèches | Diriger |
+| Espace / clic | Tirer |
+| Shift | Sprint |
+| E (maintenu) | Poser / désamorcer |
+| G · F · C | HE · Flash · Smoke |
+| B puis 1-6 | Acheter |
+| Tab · Entrée · M · Échap | Scores · Chat · Son · Pause |
 
-1. Install dependencies:
-   ```bash
-   npm install
-   ```
-2. Start server:
-   ```bash
-   npm run dev
-   ```
-3. Open [http://localhost:3000](http://localhost:3000)
+Sur mobile : croix directionnelle, boutons d'action et swipe sur la carte.
 
-Optional performance tuning:
+## Modes
 
-- Set `TICK_MS` (default `110`) to tune server update rate.
-- Example: `TICK_MS=66 npm run dev` for a faster feel.
+- **Solo vs bots** : tourne entièrement dans le navigateur (1v1 à 5v5, 3 niveaux de bots).
+- **En ligne** : partie rapide (salle publique 4v4 complétée par des bots), salle privée avec code à 4 lettres et lien `?room=CODE`, liste des salles publiques, chat.
 
-## Multiplayer Hosting Strategy
+## Lancer
 
-This project has 2 parts:
+```bash
+npm install
+npm start
+```
 
-- Frontend: static files in `public/`
-- Realtime backend: `server.js` (Node + Socket.IO)
+Puis [http://localhost:3000](http://localhost:3000). Le serveur sert la page et Socket.IO ; `render.yaml` permet de le déployer tel quel sur Render.
 
-For the simplest setup, deploy only the backend (`server.js`) and open that URL directly: it serves both the page and Socket.IO.
+## Structure
 
-## Suggested Deploy Setup
-
-1. Deploy backend (`server.js`) to Render/Railway/Fly.
-2. Open the backend URL and play directly.
-
-## Render Blueprint
-
-A ready-to-use Render blueprint is included:
-
-- [render.yaml](/Users/k.martin/Documents/Dev/Javascript/Perso/SnakeCS2D/render.yaml)
-
-It creates:
-
-- `snakecs2d` (Node web service for Socket.IO)
+- `public/shared/` : moteur de jeu partagé client/serveur (règles, armes, objectifs, bots, carte).
+- `public/js/` : rendu canvas, effets, sons synthétisés, HUD, menu, entrées, sessions locale/en ligne.
+- `server.js`, `server/rooms.js` : serveur Express + Socket.IO, salles et tick à 10 Hz.

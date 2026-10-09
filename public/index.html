@@ -1,84 +1,154 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
     <title>Snake CS2D</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%90%8D%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Space+Mono:wght@400;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <section class="stage" id="stage">
-        <canvas id="game" width="1020" height="660"></canvas>
+    <main id="stage">
+      <canvas id="game"></canvas>
 
+      <div id="hud" class="hidden">
         <header class="hud-top">
-          <div class="team-score team-t">
-            <span class="name">T</span>
-            <span id="scoreT">0</span>
+          <div class="team t">
+            <span class="side">T</span>
+            <strong id="scoreT">0</strong>
+            <div class="dots" id="dotsT"></div>
           </div>
-          <div class="hud-center">
-            <h1>Snake CS2D</h1>
-            <p id="phase">Waiting players...</p>
+          <div class="clock">
+            <div id="timer">0:00</div>
+            <div id="phase">—</div>
           </div>
-          <div class="team-score team-ct">
-            <span class="name">CT</span>
-            <span id="scoreCT">0</span>
+          <div class="team ct">
+            <div class="dots" id="dotsCT"></div>
+            <strong id="scoreCT">0</strong>
+            <span class="side">CT</span>
           </div>
         </header>
 
-        <aside class="hud-right">
-          <h2>Leaderboard</h2>
-          <ul id="leaderboard"></ul>
-        </aside>
+        <div id="roomTag" class="room-tag"></div>
+        <ul id="killfeed"></ul>
+        <div id="announce"></div>
+        <div id="hint"></div>
+        <div id="deathCard" class="hidden"></div>
 
-        <aside class="hud-left">
-          <h2>Round Rules</h2>
-          <p>T: pick bomb, hold E in A zone (3s).</p>
-          <p>CT: hold E on planted bomb (3s).</p>
-          <p>Counterplay: collide with the planter/defuser to interrupt the action.</p>
-          <p>Round 45s. Bomb 15s. First to 13.</p>
-          <p>Sides swap after 12 rounds.</p>
-        </aside>
-
-        <div class="hud-bottom">
-          <span id="event">Connect to start</span>
+        <div id="chat">
+          <ul id="chatLog"></ul>
+          <input id="chatInput" class="hidden" maxlength="120" placeholder="Message… (Entrée pour envoyer)" autocomplete="off" />
         </div>
 
-        <section class="touch-controls" id="touchControls" aria-label="Mobile controls">
+        <div id="status">
+          <div class="stat len" title="Longueur = vie + munitions"><span>❤</span><b id="len">0</b></div>
+          <div class="stat stamina" title="Sprint (Shift)"><span>⚡</span><div class="bar"><i id="staminaBar"></i></div></div>
+          <div class="stat money"><b id="money">$0</b></div>
+          <div class="items" id="items"></div>
+        </div>
+
+        <section id="buyMenu" class="panel hidden">
+          <header><h2>Armurerie</h2><span id="buyMoney">$0</span></header>
+          <div id="buyList"></div>
+          <p class="muted">Touches 1–6 ou clic · B pour fermer</p>
+        </section>
+
+        <section id="scoreboard" class="panel hidden"></section>
+
+        <section id="matchOver" class="panel hidden"></section>
+
+        <section id="pauseMenu" class="panel hidden">
+          <h2>Pause</h2>
+          <button id="resumeBtn" class="btn primary">Reprendre</button>
+          <button id="muteBtn" class="btn">Son : oui</button>
+          <button id="voiceBtn" class="btn">Voix : oui</button>
+          <button id="quitBtn" class="btn danger">Quitter la partie</button>
+          <div class="keys compact" id="pauseKeys"></div>
+        </section>
+
+        <div id="flash"></div>
+
+        <section id="touch" aria-label="Contrôles tactiles">
           <div class="dpad">
-            <button class="touch-btn up" data-dir="up">▲</button>
-            <button class="touch-btn left" data-dir="left">◀</button>
-            <button class="touch-btn down" data-dir="down">▼</button>
-            <button class="touch-btn right" data-dir="right">▶</button>
+            <button data-dir="0" class="t-up">▲</button>
+            <button data-dir="3" class="t-left">◀</button>
+            <button data-dir="1" class="t-right">▶</button>
+            <button data-dir="2" class="t-down">▼</button>
           </div>
-          <button class="touch-btn action" id="touchAction">HOLD E</button>
+          <div class="actions">
+            <div class="nades">
+              <button data-nade="he">HE</button>
+              <button data-nade="flash">FL</button>
+              <button data-nade="smoke">SM</button>
+              <button id="touchBuy">$</button>
+            </div>
+            <button id="touchBoost" class="hold">⚡</button>
+            <button id="touchAct" class="hold">E</button>
+            <button id="touchFire" class="hold fire">FEU</button>
+          </div>
         </section>
+      </div>
 
-        <section class="join-panel" id="joinBox">
-          <h2>Join Match</h2>
-          <label for="nameInput">Agent Name</label>
-          <input id="nameInput" maxlength="18" placeholder="Phoenix" />
-          <button id="joinBtn">Join</button>
-        </section>
+      <section id="menu">
+        <div class="menu-card">
+          <h1 class="logo">SNAKE<span>CS2D</span></h1>
+          <p class="tagline">Counter-Strike, mais t'es un serpent. Ta longueur = ta vie <em>et</em> tes balles.</p>
 
-        <section class="rules-modal hidden" id="rulesModal">
-          <h2>Round Rules</h2>
-          <p>T side: pick bomb, reach A zone, hold E to plant (3s).</p>
-          <p>CT side: stand on planted bomb, hold E to defuse (3s).</p>
-          <p>Counterplay: collide with the planter/defuser to interrupt the action.</p>
-          <p>Round: 45s. Bomb: 15s. First team to 13, side swap after 12 rounds.</p>
-          <button id="rulesBtn">Let&apos;s Go</button>
-        </section>
+          <label class="field">
+            <span>Pseudo</span>
+            <input id="nameInput" maxlength="16" placeholder="s1mple_snake" autocomplete="off" />
+          </label>
+
+          <nav class="tabs">
+            <button class="tab active" data-tab="solo">Solo vs bots</button>
+            <button class="tab" data-tab="online">En ligne</button>
+          </nav>
+
+          <section class="tab-panel" id="tab-solo">
+            <div class="opt"><span>Équipes</span><div class="seg" data-opt="teamSize"><button data-v="1">1v1</button><button data-v="2">2v2</button><button data-v="3" class="on">3v3</button><button data-v="4">4v4</button><button data-v="5">5v5</button></div></div>
+            <div class="opt"><span>Bots</span><div class="seg" data-opt="difficulty"><button data-v="easy">Facile</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hardcore</button></div></div>
+            <div class="opt"><span>Camp</span><div class="seg" data-opt="team"><button data-v="auto" class="on">Auto</button><button data-v="T">T</button><button data-v="CT">CT</button></div></div>
+            <div class="opt"><span>Premier à</span><div class="seg" data-opt="winRounds"><button data-v="3">3</button><button data-v="5" class="on">5</button><button data-v="8">8</button></div></div>
+            <button id="soloBtn" class="btn primary big">Jouer</button>
+          </section>
+
+          <section class="tab-panel hidden" id="tab-online">
+            <p id="serverStatus" class="muted">Connexion au serveur…</p>
+            <button id="quickBtn" class="btn primary big">⚡ Partie rapide</button>
+            <div class="row">
+              <input id="codeInput" maxlength="4" placeholder="CODE" autocomplete="off" />
+              <button id="joinBtn" class="btn">Rejoindre</button>
+            </div>
+            <details class="create">
+              <summary>Créer une salle</summary>
+              <div class="opt"><span>Équipes</span><div class="seg" data-opt="roomSize"><button data-v="2">2v2</button><button data-v="3">3v3</button><button data-v="4" class="on">4v4</button><button data-v="5">5v5</button></div></div>
+              <div class="opt"><span>Bots</span><div class="seg" data-opt="roomBots"><button data-v="1" class="on">Oui</button><button data-v="0">Non</button></div></div>
+              <div class="opt"><span>Visibilité</span><div class="seg" data-opt="roomPublic"><button data-v="0" class="on">Privée</button><button data-v="1">Publique</button></div></div>
+              <button id="createBtn" class="btn">Créer et partager le lien</button>
+            </details>
+            <h3>Salles publiques <button id="refreshBtn" class="link">↻</button></h3>
+            <ul id="roomList"><li class="muted">—</li></ul>
+          </section>
+
+          <p id="menuError" class="error hidden"></p>
+
+          <details class="help">
+            <summary>Comment on joue ?</summary>
+            <div class="keys" id="menuKeys"></div>
+            <ul class="rules">
+              <li><b>T</b> : amène la bombe sur <b>A</b> ou <b>B</b> et maintiens <kbd>E</kbd>. <b>CT</b> : maintiens <kbd>E</kbd> collé à la bombe (kit = 2× plus vite).</li>
+              <li>Chaque tir coûte <b>1 segment</b>. Une balle coupe le serpent touché ; dans la tête = <b>HEADSHOT</b>.</li>
+              <li>Foncer dans un corps ennemi ou dans ton propre corps = mort. Tête contre tête : le plus long gagne. Les murs te font glisser, tes coéquipiers sont traversables.</li>
+              <li>Mange les caisses et les restes des morts pour grandir. Une balle reçue interrompt la pose / le désamorçage.</li>
+            </ul>
+          </details>
+        </div>
       </section>
     </main>
 
-    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
-    <script src="/client.js"></script>
+    <script type="module" src="/js/main.js"></script>
   </body>
 </html>
