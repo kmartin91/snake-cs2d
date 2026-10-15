@@ -192,6 +192,7 @@ function leaveGame(errorMsg = '') {
   $('hud').classList.add('hidden');
   stage.classList.remove('ingame');
   $('flash').style.opacity = '0';
+  $('hurt').style.opacity = '0';
   history.replaceState(null, '', location.pathname);
   menu.show();
   menu.error(errorMsg);
@@ -548,17 +549,13 @@ function onKill(ev, snap) {
 }
 
 function flashScreen(color, opacity) {
-  const el = $('flash');
+  const el = $('hurt');
   el.style.transition = 'none';
   el.style.background = color;
   el.style.opacity = String(opacity);
   requestAnimationFrame(() => {
     el.style.transition = 'opacity 0.5s ease-out';
     el.style.opacity = '0';
-    setTimeout(() => {
-      el.style.background = '#fff';
-      el.style.transition = '';
-    }, 550);
   });
 }
 
