@@ -1,4 +1,5 @@
 FROM node:22-alpine
+LABEL app=csnake
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 ELO_FILE=/app/data/elo.json
 COPY package.json package-lock.json ./

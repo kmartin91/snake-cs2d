@@ -12,7 +12,7 @@ rsync -az --delete \
   --exclude='*' ./ "$HOST:$DIR/app/"
 rsync -az deploy/docker-compose.yml "$HOST:$DIR/docker-compose.yml"
 
-ssh "$HOST" "cd $DIR && sudo docker compose up -d --build --remove-orphans && sudo docker image prune -f >/dev/null"
+ssh "$HOST" "cd $DIR && sudo docker compose up -d --build --remove-orphans && sudo docker image prune -f --filter label=app=csnake >/dev/null"
 
 for i in $(seq 1 20); do
   if ssh "$HOST" "curl -fsS http://127.0.0.1:3210/health" >/dev/null 2>&1; then
