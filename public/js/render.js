@@ -3,6 +3,7 @@ import { CALLOUTS, parseMap } from '../shared/map.js';
 import { computeVision } from '../shared/vision.js';
 import { WEAPON_KEYS } from '../shared/game.js';
 import { Fx } from './fx.js';
+import { CLASSIC } from '../shared/modes.js';
 import { skinById } from '../shared/skins.js';
 
 export const TEAM_COLORS = {
@@ -637,6 +638,72 @@ export class Renderer {
     ctx.fillText(label, x, by - c * 0.08);
   }
 
+  drawC4(x, y, size, now, period) {
+    const ctx = this.ctx;
+    ctx.fillStyle = '#2b2d1f';
+    ctx.fillRect(x - size / 2, y - size * 0.32, size, size * 0.64);
+    ctx.fillStyle = '#6b6f45';
+    ctx.fillRect(x - size * 0.42, y - size * 0.24, size * 0.84, size * 0.48);
+    ctx.fillStyle = '#1b1c12';
+    ctx.fillRect(x - size * 0.3, y - size * 0.14, size * 0.4, size * 0.28);
+    ctx.fillStyle = Math.floor(now / period) % 2 === 0 ? '#ff2a1a' : '#5a1510';
+    ctx.beginPath();
+    ctx.arc(x + size * 0.25, y, size * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawBomb(b, now, below) {
+    if (!b) return;
+    const ctx = this.ctx;
+    const c = this.cell;
+    const x = (b.x + 0.5) * c;
+    const y = (b.y + 0.5) * c;
+    if (b.s === 'planted') {
+      const urgency = 1 - b.t / CLASSIC.bombTime;
+      if (below) {
+        ctx.fillStyle = `rgba(255,40,20,${0.05 + urgency * 0.12})`;
+        ctx.beginPath();
+        ctx.arc(x, y, CLASSIC.bombRadius * c, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.setLineDash([c * 0.5, c * 0.35]);
+        ctx.strokeStyle = `rgba(255,40,20,${0.3 + urgency * 0.5})`;
+        ctx.lineWidth = Math.max(1.5, c * 0.08);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+      }
+      const period = Math.max(60, (b.t / CLASSIC.bombTime) * 500);
+      if (Math.floor(now / period) % 2 === 0) {
+        ctx.fillStyle = 'rgba(255,40,20,0.35)';
+        ctx.beginPath();
+        ctx.arc(x, y, c * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      this.drawC4(x, y, c * 1.05, now, period);
+      if (b.dp > 0) this.drawRing(b.x, b.y, b.dp, '#4bd2ff');
+    } else if (b.s === 'ground' && !below) {
+      ctx.fillStyle = `rgba(255,220,80,${0.25 + Math.sin(now / 160) * 0.1})`;
+      ctx.beginPath();
+      ctx.arc(x, y, c * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      this.drawC4(x, y, c * 0.85, now, 700);
+    }
+  }
+
+  drawRing(x, y, k, color) {
+    const ctx = this.ctx;
+    const c = this.cell;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = c * 0.2;
+    ctx.beginPath();
+    ctx.arc((x + 0.5) * c, (y + 0.5) * c, c * 0.95, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc((x + 0.5) * c, (y + 0.5) * c, c * 0.95, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, k));
+    ctx.stroke();
+  }
+
   drawLoot(list, now) {
     const ctx = this.ctx;
     const c = this.cell;
@@ -772,6 +839,7 @@ export class Renderer {
     const team = self ? self.tm : null;
     this.updateFog(curr, team);
 
+    this.drawBomb(curr.bomb, now, true);
     this.drawLoot(curr.lt, now);
     this.fx.drawBelow(ctx, c);
     const ordered = [...curr.p].sort((a, b) => (a.id === selfId) - (b.id === selfId));
@@ -779,11 +847,19 @@ export class Renderer {
       const pts = squads.get(p.id);
       if (pts) this.drawSquad(p, pts, p.id === selfId, now);
     }
+    if (curr.bomb && curr.bomb.s === 'ground') this.drawBomb(curr.bomb, now, false);
+    for (const p of curr.p) {
+      const pts = squads.get(p.id);
+      if (!pts) continue;
+      if (p.hb && pts.length > 1) this.drawC4((pts[1].x + 0.5) * c, (pts[1].y + 0.5) * c, c * 0.6, now, 500);
+      if (p.ac && curr.bomb) this.drawRing(pts[0].x, pts[0].y, p.ac === 'plant' ? curr.bomb.pp : curr.bomb.dp, p.ac === 'plant' ? '#ff4b2b' : '#4bd2ff');
+    }
     this.drawBullets();
     this.drawGrenades(prev, curr, t);
     this.fx.drawAbove(ctx, c);
     this.drawSmokes(curr.sm, now);
     this.drawFog(t);
+    if (curr.bomb && (curr.bomb.s === 'planted' || (curr.bomb.s === 'ground' && team === 'T'))) this.drawBomb(curr.bomb, now, false);
     this.drawPings(dt);
     for (const p of curr.p) {
       const pts = squads.get(p.id);

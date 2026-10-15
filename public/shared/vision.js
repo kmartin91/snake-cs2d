@@ -1,4 +1,4 @@
-export const FOG_PHASES = new Set(['countdown', 'live', 'warmup']);
+export const FOG_PHASES = new Set(['countdown', 'live', 'planted', 'roundover', 'warmup']);
 
 function smokeMask(map, smokes) {
   if (!smokes.length) return null;

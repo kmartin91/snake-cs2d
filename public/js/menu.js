@@ -7,14 +7,13 @@ import { SOLO_XP, badgeHtml, dailiesHtml, rankColor, rankName, rankShort, xpToNe
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-const PHASES = {
-  freeze: 'freeze',
-  live: 'en jeu',
-  planted: 'bombe posée',
-  over: 'fin de round',
-  warmup: 'warmup',
-  matchover: 'fin de match'
+const MODE_DESC = {
+  tdm: 'Réapparition en 3 s · la première équipe au nombre de kills gagne',
+  classic: 'Rounds à une vie · les T posent la bombe sur A ou B · compte pour ton ELO',
+  gungame: 'Chaque leader tué = arme suivante · le premier au bout de l\'échelle gagne'
 };
+const MODE_SHORT = { tdm: 'match à mort', classic: 'classique', gungame: 'course aux armes' };
+
 
 export class Menu {
   constructor(actions, progress) {
@@ -26,6 +25,8 @@ export class Menu {
       difficulty: 'normal',
       team: 'auto',
       scoreToWin: '25',
+      mode: 'tdm',
+      onlineMode: 'tdm',
       roomSize: '4',
       roomBots: '1',
       roomPublic: '0',
@@ -49,6 +50,7 @@ export class Menu {
           this.opts[key] = btn.dataset.v;
           store.set('scs-opts', this.opts);
           this.updateXpHint();
+          this.updateModes();
         });
       }
     }
@@ -59,10 +61,11 @@ export class Menu {
         teamSize: Number(this.opts.teamSize),
         difficulty: this.opts.difficulty,
         team: this.opts.team,
-        scoreToWin: Number(this.opts.scoreToWin)
+        scoreToWin: Number(this.opts.scoreToWin),
+        mode: this.opts.mode
       })
     );
-    $('quickBtn').addEventListener('click', () => actions.quick(this.name()));
+    $('quickBtn').addEventListener('click', () => actions.quick(this.name(), this.opts.onlineMode));
     $('joinBtn').addEventListener('click', () => this.joinCode());
     $('codeInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.joinCode();
@@ -72,10 +75,13 @@ export class Menu {
         name: this.name(),
         teamSize: Number(this.opts.roomSize),
         bots: this.opts.roomBots === '1',
-        isPublic: this.opts.roomPublic === '1'
+        isPublic: this.opts.roomPublic === '1',
+        mode: this.opts.onlineMode
       })
     );
     $('refreshBtn').addEventListener('click', () => actions.refresh());
+    $('refreshBoard').addEventListener('click', () => actions.refresh());
+    this.updateModes();
     $('profileCard').addEventListener('click', () => this.showTab('profile'));
     this.updateXpHint();
     this.renderProfile();
@@ -118,6 +124,25 @@ export class Menu {
     this.el.classList.remove('hidden');
     this.setBusy(false);
     this.renderProfile();
+  }
+
+  updateModes() {
+    for (const el of document.querySelectorAll('.mode-desc')) el.textContent = MODE_DESC[this.opts[el.dataset.desc]] || '';
+    for (const el of document.querySelectorAll('.tdm-only')) el.classList.toggle('hidden', this.opts.mode !== 'tdm');
+    $('quickBtn').textContent = `⚡ Partie rapide · ${MODE_SHORT[this.opts.onlineMode] || ''}`;
+  }
+
+  setLeaderboard(data) {
+    const list = $('leaderboard');
+    if (!data || !data.top.length) {
+      list.innerHTML = '<li class="muted">Personne n\'est encore classé — joue un match Classique en ligne !</li>';
+    } else {
+      list.innerHTML = data.top
+        .map((p, i) => `<li><span>${i + 1}. ${esc(p.name)}</span><b>${p.rating}</b><small class="muted">${p.wins}V / ${p.games}</small></li>`)
+        .join('');
+    }
+    const me = data && data.me;
+    $('myElo').textContent = me && me.games ? `Ta cote en ligne : ${me.rating} · rang ${me.rank} · ${me.wins}V / ${me.games} matchs` : 'Pas encore classé en ligne.';
   }
 
   updateXpHint() {
@@ -165,6 +190,7 @@ export class Menu {
       ['Soldats abattus', st.downs || 0],
       ['Record kills', st.bestKills],
       ['Meilleure série', s.bestStreak],
+      ['ELO solo (Classique)', s.elo || 1000],
       ['XP totale', s.total],
       ['Rang', badgeHtml(s.level, 'sm')]
     ];
@@ -202,7 +228,7 @@ export class Menu {
     }
     list.innerHTML = status.list
       .map(
-        (r) => `<li><span><b>${esc(r.code)}</b> · ${r.humans}/${r.max} · ${r.teamSize}v${r.teamSize} · ${r.score[0]}-${r.score[1]} · ${PHASES[r.phase] || r.phase}</span>
+        (r) => `<li><span><b>${esc(r.code)}</b> · ${MODE_SHORT[r.mode] || ''} · ${r.humans}/${r.max} · ${r.teamSize}v${r.teamSize} · ${r.score[0]}-${r.score[1]}</span>
         <button data-code="${esc(r.code)}">Rejoindre</button></li>`
       )
       .join('');

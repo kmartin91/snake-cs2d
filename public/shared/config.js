@@ -80,5 +80,5 @@ export const BOT_LINES = {
   kill: ['ez', 'trop facile', 'nice', 'next', 'tu sors', 'gg ez', 'cheh', 'mon escouade te salue'],
   death: ['lag', 'wtf ??', 'nooon', 'il campe là', 'jsuis aveugle', 'ff', 'hacker', 'sérieux ?', 'mes soldats m\'ont lâché'],
   golden: ['le gold est à moi', 'DEAGLE D\'OR LETS GO', 'personne touche au gold'],
-  start: ['go go go', 'je prends le centre', 'on fonce', 'qui va au gold ?', 'je lurk']
+  start: ['go go go', 'je prends le centre', 'on fonce', 'gl hf', 'je lurk', 'on reste groupés']
 };

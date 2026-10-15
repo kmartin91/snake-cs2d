@@ -1,0 +1,15 @@
+services:
+  csnake:
+    build: ./app
+    image: csnake:latest
+    container_name: csnake
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3210:3000"
+    volumes:
+      - ./data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

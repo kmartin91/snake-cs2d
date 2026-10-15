@@ -1,7 +1,7 @@
 {
-  "name": "snakecs2d",
+  "name": "csnake",
   "version": "1.0.0",
-  "description": "Multiplayer Counter-Strike x Snake hybrid",
+  "description": "CSnake — Snake + Counter-Strike, jeu navigateur multijoueur",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -11,13 +11,17 @@
     "snake",
     "counter-strike",
     "multiplayer",
-    "socket.io"
+    "socket.io",
+    "game"
   ],
-  "author": "",
+  "author": "KMA Studio",
   "license": "MIT",
   "dependencies": {
     "express": "^4.19.2",
     "socket.io": "^4.8.1"
   },
-  "type": "module"
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  }
 }

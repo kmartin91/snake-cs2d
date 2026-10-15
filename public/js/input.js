@@ -16,6 +16,7 @@ export const KEY_HELP = [
   ['Souris', 'Viser — toute l\'escouade tire vers le viseur'],
   ['Clic / Espace', 'Tirer (plus précis en ligne droite)'],
   ['R', 'Recharger'],
+  ['E (maintenu)', 'Classique : poser / désamorcer la bombe'],
   ['G · F · C', 'HE · Flash · Smoke vers le viseur'],
   ['Tab', 'Scores'],
   ['Entrée', 'Chat'],
@@ -26,7 +27,7 @@ export const KEY_HELP = [
 const isTyping = (el) => el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 
 export function bindInput(canvas, h) {
-  const held = { fire: false };
+  const held = { fire: false, action: false };
   const keys = new Set();
   let lastMove = '0,0';
 
@@ -54,6 +55,7 @@ export function bindInput(canvas, h) {
 
   const releaseAll = () => {
     set('fire', false);
+    set('action', false);
     keys.clear();
     sendMove();
     h.scoreboard(false);
@@ -84,6 +86,9 @@ export function bindInput(canvas, h) {
       case 'KeyR':
         h.reload();
         break;
+      case 'KeyE':
+        set('action', true);
+        break;
       case 'Tab':
         e.preventDefault();
         h.scoreboard(true);
@@ -107,6 +112,7 @@ export function bindInput(canvas, h) {
       return;
     }
     if (e.code === 'Space') set('fire', false);
+    if (e.code === 'KeyE') set('action', false);
     if (e.code === 'Tab') h.scoreboard(false);
   });
 
@@ -195,6 +201,18 @@ export function bindInput(canvas, h) {
   };
   for (const btn of document.querySelectorAll('#touch [data-nade]')) press(btn, () => h.nade(btn.dataset.nade));
   press(document.getElementById('touchReload'), () => h.reload());
+  const act = document.getElementById('touchAct');
+  act.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    act.classList.add('active');
+    if (h.active()) set('action', true);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
+    act.addEventListener(type, () => {
+      act.classList.remove('active');
+      set('action', false);
+    });
+  }
 
   return { releaseAll };
 }

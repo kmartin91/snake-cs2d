@@ -1,12 +1,12 @@
 import { Game } from '../shared/game.js';
 
 export class LocalSession {
-  constructor({ name, team, teamSize, difficulty, scoreToWin, skin }, onSnap) {
+  constructor({ name, team, teamSize, difficulty, scoreToWin, skin, mode }, onSnap) {
     this.online = false;
     this.selfId = 'me';
     this.paused = false;
     this.onSnap = onSnap;
-    this.game = new Game({ teamSize, difficulty, scoreToWin, bots: true });
+    this.game = new Game({ teamSize, difficulty, scoreToWin, mode, bots: true });
     this.game.addPlayer({ id: this.selfId, name, skin, team: team === 'T' || team === 'CT' ? team : null });
     this.timer = setInterval(() => {
       if (this.paused) return;
@@ -86,6 +86,9 @@ export class OnlineSession {
     this.onPing = null;
     this.handleSnap = (snap) => onSnap(snap);
     this.handleDisconnect = () => onClose('Connexion perdue avec le serveur');
+    this.onElo = null;
+    this.handleElo = (result) => this.onElo && this.onElo(result);
+    socket.on('elo', this.handleElo);
     socket.on('s', this.handleSnap);
     socket.on('disconnect', this.handleDisconnect);
     this.pingTimer = setInterval(() => {
@@ -111,6 +114,7 @@ export class OnlineSession {
   leave() {
     clearInterval(this.pingTimer);
     this.socket.off('s', this.handleSnap);
+    this.socket.off('elo', this.handleElo);
     this.socket.off('disconnect', this.handleDisconnect);
     if (this.socket.connected) this.socket.emit('leave');
   }

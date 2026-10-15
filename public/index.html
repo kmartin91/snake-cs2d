@@ -7,10 +7,26 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Snake Strike" />
+    <meta name="apple-mobile-web-app-title" content="CSnake" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
-    <title>Snake Strike</title>
+    <title>CSnake — Snake × Counter-Strike</title>
+    <meta name="description" content="Snake + Counter-Strike dans ton navigateur : ton escouade te suit en file et tire avec toi. Match à mort, mode bombe classé ELO, course à l'armement — en solo contre des bots ou en ligne entre potes." />
+    <link rel="canonical" href="https://csnake.kma.studio/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CSnake" />
+    <meta property="og:title" content="CSnake — Snake × Counter-Strike" />
+    <meta property="og:description" content="Snake + Counter-Strike dans ton navigateur : ton escouade te suit en file et tire avec toi. Match à mort, mode bombe classé ELO, course à l'armement — en solo contre des bots ou en ligne entre potes." />
+    <meta property="og:url" content="https://csnake.kma.studio/" />
+    <meta property="og:image" content="https://csnake.kma.studio/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Deux escouades de serpents armés s'affrontent sur une carte façon Dust2" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="CSnake — Snake × Counter-Strike" />
+    <meta name="twitter:description" content="Snake + Counter-Strike dans ton navigateur : ton escouade te suit en file et tire avec toi. Match à mort, mode bombe classé ELO, course à l'armement — en solo contre des bots ou en ligne entre potes." />
+    <meta name="twitter:image" content="https://csnake.kma.studio/og.png" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%90%8D%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -41,6 +57,7 @@
         <ul id="killfeed"></ul>
         <div id="announce"></div>
         <div id="hint"></div>
+        <div id="actionBar" class="hidden"><span id="actionLabel"></span><div class="bar"><i id="actionFill"></i></div></div>
         <ul id="xpFeed"></ul>
         <div id="deathCard" class="hidden"></div>
 
@@ -81,6 +98,7 @@
               <button data-nade="smoke">SM</button>
               <button id="touchReload">R</button>
             </div>
+            <button id="touchAct" class="act-btn">E · BOMBE</button>
             <div id="aimPad" class="stick-pad aim"><i id="aimKnob"></i><span>VISER<br />TIRER</span></div>
           </div>
         </section>
@@ -88,7 +106,7 @@
 
       <section id="menu">
         <div class="menu-card">
-          <h1 class="logo">SNAKE<span>STRIKE</span></h1>
+          <h1 class="logo"><span>CS</span>NAKE</h1>
           <p class="tagline">Ton escouade te suit en file. Plus elle est longue, plus tu cognes fort… et plus tu es une cible.</p>
 
           <button id="profileCard" class="profile-card" type="button">
@@ -112,16 +130,22 @@
           </nav>
 
           <section class="tab-panel" id="tab-solo">
+            <div class="opt mode-opt"><span>Mode</span><div class="seg" data-opt="mode"><button data-v="tdm" class="on">Match à mort</button><button data-v="classic">Classique</button><button data-v="gungame">Course aux armes</button></div></div>
+            <p class="muted small mode-desc" data-desc="mode"></p>
             <div class="opt"><span>Équipes</span><div class="seg" data-opt="teamSize"><button data-v="1">1v1</button><button data-v="2">2v2</button><button data-v="3" class="on">3v3</button><button data-v="4">4v4</button><button data-v="5">5v5</button></div></div>
             <div class="opt"><span>Bots</span><div class="seg" data-opt="difficulty"><button data-v="easy">Facile</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hardcore</button></div></div>
             <div class="opt"><span>Camp</span><div class="seg" data-opt="team"><button data-v="auto" class="on">Auto</button><button data-v="T">T</button><button data-v="CT">CT</button></div></div>
-            <div class="opt"><span>Kills pour gagner</span><div class="seg" data-opt="scoreToWin"><button data-v="15">15</button><button data-v="25" class="on">25</button><button data-v="40">40</button></div></div>
+            <div class="opt tdm-only"><span>Kills pour gagner</span><div class="seg" data-opt="scoreToWin"><button data-v="15">15</button><button data-v="25" class="on">25</button><button data-v="40">40</button></div></div>
             <button id="soloBtn" class="btn primary big">Jouer</button>
+            <p class="quick-keys desk"><kbd>ZQSD</kbd> / <kbd>↑←↓→</kbd> diriger · 🖱️ viser et tirer · ramasse des ➕ recrues</p>
+            <p class="quick-keys touch">Joystick gauche : diriger · joystick droit : viser et tirer</p>
             <p class="muted small" id="xpHint"></p>
           </section>
 
           <section class="tab-panel hidden" id="tab-online">
             <p id="serverStatus" class="muted">Connexion au serveur…</p>
+            <div class="opt mode-opt"><span>Mode</span><div class="seg" data-opt="onlineMode"><button data-v="tdm" class="on">Match à mort</button><button data-v="classic">Classique</button><button data-v="gungame">Course aux armes</button></div></div>
+            <p class="muted small mode-desc" data-desc="onlineMode"></p>
             <button id="quickBtn" class="btn primary big">⚡ Partie rapide</button>
             <div class="row">
               <input id="codeInput" maxlength="4" placeholder="CODE" autocomplete="off" />
@@ -136,6 +160,9 @@
             </details>
             <h3>Salles publiques <button id="refreshBtn" class="link">↻</button></h3>
             <ul id="roomList"><li class="muted">—</li></ul>
+            <h3>Classement Classique (ELO) <button id="refreshBoard" class="link">↻</button></h3>
+            <p id="myElo" class="muted small"></p>
+            <ol id="leaderboard" class="leaderboard"><li class="muted">—</li></ol>
             <p class="muted small">Bonus XP en ligne : ×1.2</p>
           </section>
 
@@ -150,10 +177,13 @@
 
           <p id="menuError" class="error hidden"></p>
 
+          <p class="credit">Un jeu codé par <a href="https://kma.studio" target="_blank" rel="noopener">KMA Studio</a> · un nouveau jeu chaque vendredi midi · <button id="shareBtn" class="link" type="button">Partager</button></p>
+
           <details class="help">
             <summary>Comment on joue ?</summary>
             <div class="keys" id="menuKeys"></div>
             <ul class="rules">
+              <li><b>Match à mort</b> : réapparition en 3 s, la première équipe à X kills gagne. <b>Course à l'armement</b> : chaque leader tué te donne l'arme suivante, le premier à tuer au Deagle d'or gagne. <b>Classique</b> : une vie par round, les T posent la bombe sur A ou B (maintiens <kbd>E</kbd>), les CT la désamorcent — compte pour ton classement ELO.</li>
               <li>Tu es le <b>leader</b> (la tête). Comme dans le snake d'origine, <b>tu avances toujours</b> : tu choisis seulement la direction. Ton escouade te suit en file et <b>tire avec toi</b> vers ton viseur.</li>
               <li>Ramasse des <b>recrues</b> pour allonger la file : plus de puissance de feu, mais une cible plus grosse et plus dure à manœuvrer.</li>
               <li>Chaque soldat a ses PV et sert de bouclier. <b>Si le leader tombe, toute l'escouade tombe</b> — tu réapparais 3 s plus tard.</li>
@@ -168,7 +198,7 @@
     <div id="rotate">
       <div class="phone"></div>
       <b>Tourne ton téléphone</b>
-      <span class="muted">Snake Strike se joue en paysage.</span>
+      <span class="muted">CSnake se joue en paysage.</span>
       <span class="muted">Sur iPhone : Partager → « Sur l'écran d'accueil » pour jouer en plein écran.</span>
     </div>
 

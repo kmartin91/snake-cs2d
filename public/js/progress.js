@@ -1,5 +1,8 @@
 import { SKINS } from '../shared/skins.js';
 import { store } from './audio.js';
+import { eloExpected } from '../shared/modes.js';
+
+const BOT_ELO = { easy: 800, normal: 1000, hard: 1250 };
 
 export const RANKS = [
   ['Silver I', 'S1'],
@@ -101,6 +104,8 @@ export class Progress {
     this.s = saved ? { ...base, ...saved, stats: { ...base.stats, ...saved.stats }, daily: { ...base.daily, ...saved.daily } } : base;
     this.mult = 1;
     this.onGain = null;
+    this.onElo = null;
+    this.ctx = { solo: true, difficulty: 'normal' };
     this.resetMatch();
     this.ensureDaily();
   }
@@ -128,6 +133,10 @@ export class Progress {
 
   resetMatch() {
     this.match = { xp: 0, lines: new Map(), kills: 0, startLevel: this.s.level, startXp: this.s.xp };
+  }
+
+  setContext(ctx) {
+    this.ctx = ctx;
   }
 
   setMultiplier(mult) {
@@ -203,6 +212,18 @@ export class Progress {
           if (ev.streak === 2) this.bump('multiKills');
         }
         break;
+      case 'planted':
+        if (ev.id === selfId) this.gain(15, 'Bombes posées');
+        break;
+      case 'defused':
+        if (ev.id === selfId) this.gain(25, 'Bombes désamorcées');
+        break;
+      case 'roundend':
+        if (self && self.tm === ev.winner) this.gain(8, 'Rounds gagnés');
+        break;
+      case 'tierup':
+        if (ev.id === selfId) this.gain(4, 'Armes débloquées');
+        break;
       case 'down':
         if (ev.by !== selfId) break;
         st.downs = (st.downs || 0) + 1;
@@ -237,6 +258,13 @@ export class Progress {
           this.bump('matchesWon');
         } else if (ev.winner !== 'draw') {
           this.s.streak = 0;
+        }
+        if (ev.mode === 'classic' && this.ctx.solo && self) {
+          const before = this.s.elo || 1000;
+          const score = ev.winner === 'draw' ? 0.5 : self.tm === ev.winner ? 1 : 0;
+          const after = Math.max(100, Math.round(before + 32 * (score - eloExpected(before, BOT_ELO[this.ctx.difficulty] || 1000))));
+          this.s.elo = after;
+          if (this.onElo) this.onElo({ before, after, delta: after - before });
         }
         this.save();
         break;

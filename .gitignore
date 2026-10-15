@@ -30,3 +30,5 @@ Thumbs.db
 *.seed
 
 idea
+# Classement ELO local
+data/

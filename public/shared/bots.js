@@ -1,5 +1,6 @@
 import { CONFIG, DT, WEAPONS, DIFFICULTY } from './config.js';
 import { pick } from './utils.js';
+import { CLASSIC } from './modes.js';
 import { lineClear } from './physics.js';
 
 const DIRS4 = [
@@ -93,9 +94,60 @@ function nearest(list, p, maxD) {
   return best;
 }
 
+function closestTo(list, pt) {
+  let best = null;
+  let bestD = Infinity;
+  for (const o of list) {
+    const d = Math.hypot(o.x - pt.x, o.y - pt.y);
+    if (d < bestD) {
+      bestD = d;
+      best = o;
+    }
+  }
+  return best;
+}
+
+export function botObjective(p, alive) {
+  if (this.mode !== 'classic' || this.phase === 'warmup') return null;
+  const ai = p.ai;
+  const b = this.bomb;
+  const mates = alive.filter((o) => o.alive && o.team === p.team);
+  const siteGoal = (site, urgent = false) => {
+    if (!ai.siteCell || ai.siteCellSite !== site || Math.hypot(ai.siteCell.x - p.x, ai.siteCell.y - p.y) < 1.5) {
+      ai.siteCell = pick(this.map.sites[site]);
+      ai.siteCellSite = site;
+    }
+    return { ...spot(ai.siteCell, 'objective'), urgent };
+  };
+  const nearBomb = () => {
+    if (!ai.guard || Math.hypot(ai.guard.x - b.x, ai.guard.y - b.y) > 4 || Math.hypot(ai.guard.x - p.x, ai.guard.y - p.y) < 1) {
+      const cells = this.map.floor.filter((c) => Math.hypot(c.x - b.x, c.y - b.y) <= 4);
+      ai.guard = pick(cells) || { x: Math.round(b.x), y: Math.round(b.y) };
+    }
+    return spot(ai.guard, 'objective');
+  };
+  if (p.team === 'T') {
+    if (p.hasBomb) return siteGoal(this.plan, true);
+    if (b.state === 'ground' && closestTo(mates, b) === p) return { ...spot(b, 'objective'), urgent: true };
+    if (b.state === 'planted') return nearBomb();
+    return siteGoal(this.plan);
+  }
+  if (b.state === 'planted') {
+    if (closestTo(mates, b) === p || Math.hypot(p.x - b.x, p.y - b.y) < 6) return { ...spot(b, 'objective'), urgent: true };
+    return nearBomb();
+  }
+  return siteGoal(ai.site || 'A');
+}
+
 export function botGoal(p, alive) {
   const ai = p.ai;
   const D = ai.diff || DIFFICULTY[this.opts.difficulty];
+  const objective = this.botObjective(p, alive);
+  if (objective) {
+    if (objective.urgent) return objective;
+    const close = nearest(this.loot.filter((l) => (l.kind === 'medkit' && p.hp < 60) || l.kind === 'recruit' || l.kind === 'tag' || (l.kind === 'weapon' && p.weapon === 'pistol')), p, 6);
+    return close ? spot(close, 'loot') : objective;
+  }
   if (p.hp < 60) {
     const med = nearest(this.loot.filter((l) => l.kind === 'medkit'), p, 22);
     if (med) return spot(med, 'loot');
@@ -160,6 +212,18 @@ export function botThink(p, alive) {
     p.fireHeld = false;
     if (p.moving) p.aim = p.angle;
     if (p.reload <= 0 && p.ammo < w.mag * 0.6) this.startReload(p);
+  }
+
+  if (this.mode === 'classic') {
+    const b = this.bomb;
+    const canPlant = this.phase === 'live' && p.hasBomb && this.siteAt(p.x, p.y);
+    const canDefuse =
+      this.phase === 'planted' && p.team === 'CT' && b.state === 'planted' && Math.hypot(p.x - b.x, p.y - b.y) <= CLASSIC.defuseRange;
+    p.actionHeld = Boolean(canPlant || canDefuse);
+    if (p.actionHeld) {
+      p.fireHeld = false;
+      return;
+    }
   }
 
   ai.think -= DT;

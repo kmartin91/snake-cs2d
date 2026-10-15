@@ -40,9 +40,9 @@ io.on('connection', (socket) => {
   socket.on('rooms', (ack) => reply(ack, { list: rooms.list(), ...rooms.stats() }));
 
   socket.on('quick', (payload, ack) => {
-    const room = rooms.quickMatch();
+    const room = rooms.quickMatch(payload?.mode);
     if (!room) return reply(ack, { ok: false, error: 'Serveur plein' });
-    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || '')));
+    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || ''), String(payload?.token || '')));
   });
 
   socket.on('create', (payload, ack) => {
@@ -50,20 +50,27 @@ io.on('connection', (socket) => {
       isPublic: Boolean(payload?.isPublic),
       teamSize: payload?.teamSize,
       bots: payload?.bots,
-      scoreToWin: payload?.scoreToWin
+      scoreToWin: payload?.scoreToWin,
+      mode: payload?.mode
     });
     if (!room) return reply(ack, { ok: false, error: 'Serveur plein' });
-    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || '')));
+    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || ''), String(payload?.token || '')));
   });
 
   socket.on('join', (payload, ack) => {
     const code = String(payload?.code || '').trim().toUpperCase();
     const room = rooms.rooms.get(code);
     if (!room) return reply(ack, { ok: false, error: `Salle ${code || '?'} introuvable` });
-    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || '')));
+    reply(ack, rooms.join(room, socket, safeName(payload?.name), String(payload?.skin || ''), String(payload?.token || '')));
   });
 
   socket.on('leave', () => rooms.leave(socket));
+
+  socket.on('leaderboard', (payload, ack) => {
+    const token = String(payload?.token || '');
+    const me = rooms.elo.players.get(token);
+    reply(ack, { top: rooms.elo.top(15), me: me ? { ...me, rank: rooms.elo.rank(token) } : null });
+  });
 
   socket.on('i', (msg) => {
     if (!Array.isArray(msg) || msg.length > 4 || !allow(socket)) return;
@@ -87,6 +94,9 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => rooms.leave(socket));
 });
 
+process.on('uncaughtException', (err) => console.error('Erreur non gérée', err));
+process.on('unhandledRejection', (err) => console.error('Promesse rejetée', err));
+
 httpServer.listen(PORT, () => {
-  console.log(`Snake Strike sur http://localhost:${PORT}`);
+  console.log(`CSnake sur http://localhost:${PORT}`);
 });

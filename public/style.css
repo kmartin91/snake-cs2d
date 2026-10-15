@@ -649,7 +649,7 @@ kbd {
   margin: 0;
   font-family: "Black Ops One", system-ui;
   font-weight: 400;
-  font-size: clamp(2.4rem, 9vw, 3.6rem);
+  font-size: clamp(2.8rem, 11vw, 4.4rem);
   line-height: 1;
   letter-spacing: 0.04em;
   color: #f4e4c4;
@@ -658,9 +658,41 @@ kbd {
 
 .logo span {
   display: inline-block;
-  margin-left: 0.25em;
+  margin-right: 0.05em;
   color: var(--t);
   transform: rotate(-4deg);
+}
+
+.quick-keys {
+  margin: 8px 0 0;
+  font-size: 0.74rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.quick-keys.touch {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .quick-keys.desk {
+    display: none;
+  }
+
+  .quick-keys.touch {
+    display: block;
+  }
+}
+
+.credit {
+  margin: 14px 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.credit a {
+  color: var(--gold);
 }
 
 .tagline {
@@ -1224,6 +1256,93 @@ h3 {
 
 .stick-pad.active {
   border-color: #ffb547;
+}
+
+#actionBar {
+  position: absolute;
+  left: 50%;
+  top: 62%;
+  transform: translateX(-50%);
+  width: min(320px, 70vw);
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 75, 58, 0.6);
+  background: rgba(10, 16, 21, 0.85);
+  text-align: center;
+  font-family: "Black Ops One", system-ui;
+  font-size: 0.9rem;
+}
+
+#actionBar .bar {
+  margin-top: 6px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+#actionBar .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #ff4b2b, #ffb547);
+}
+
+#actionBar.defuse {
+  border-color: rgba(69, 181, 255, 0.6);
+}
+
+#actionBar.defuse .bar i {
+  background: linear-gradient(90deg, #2b9bff, #9be3ff);
+}
+
+.elo-line {
+  text-align: center;
+  margin: 0 0 8px;
+}
+
+.elo-line .up {
+  color: #7dff7a;
+  font-weight: 700;
+}
+
+.elo-line .down {
+  color: #ff6b5a;
+  font-weight: 700;
+}
+
+.leaderboard {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+  font-size: 0.78rem;
+}
+
+.leaderboard li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  padding: 4px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+}
+
+.leaderboard li.muted {
+  border: 0;
+}
+
+.act-btn {
+  display: none;
+}
+
+#stage.mode-classic .act-btn {
+  display: block;
+  grid-column: 1 / -1;
+  height: 40px;
+  border-radius: 999px !important;
+  font-family: "Black Ops One", system-ui;
 }
 
 /* Tactile */

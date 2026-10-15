@@ -1,4 +1,6 @@
 import { Game } from '../public/shared/game.js';
+import { MODES } from '../public/shared/modes.js';
+import { EloStore } from './elo.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const MAX_ROOMS = 200;
@@ -14,6 +16,7 @@ export class RoomManager {
   constructor(io) {
     this.io = io;
     this.rooms = new Map();
+    this.elo = new EloStore();
   }
 
   makeCode() {
@@ -25,7 +28,7 @@ export class RoomManager {
     return null;
   }
 
-  create({ isPublic = false, teamSize, bots = true, scoreToWin } = {}) {
+  create({ isPublic = false, teamSize, bots = true, scoreToWin, mode } = {}) {
     if (this.rooms.size >= MAX_ROOMS) return null;
     const code = this.makeCode();
     if (!code) return null;
@@ -33,7 +36,8 @@ export class RoomManager {
       teamSize: clampInt(teamSize, 1, 5, PUBLIC_TEAM_SIZE),
       bots: bots !== false,
       difficulty: 'normal',
-      scoreToWin: clampInt(scoreToWin, 5, 100, 25)
+      scoreToWin: clampInt(scoreToWin, 5, 100, 25),
+      mode: MODES[mode] ? mode : 'tdm'
     });
     const room = { code, game, isPublic, sockets: new Set(), createdAt: Date.now() };
     room.interval = setInterval(() => this.broadcast(room), game.tickMs);
@@ -42,7 +46,15 @@ export class RoomManager {
   }
 
   broadcast(room) {
-    const snap = room.game.step();
+    let snap;
+    try {
+      snap = room.game.step();
+    } catch (err) {
+      console.error(`Salle ${room.code} : erreur de tick`, err);
+      return;
+    }
+    const end = room.game.mode === 'classic' && snap.ev.find((e) => e.type === 'matchend');
+    if (end) this.rateMatch(room, end.winner);
     const views = {};
     for (const id of room.sockets) {
       const team = room.game.players.get(id)?.team || 'none';
@@ -51,23 +63,46 @@ export class RoomManager {
     }
   }
 
+  rateMatch(room, winner) {
+    const sides = { T: { humans: [], bots: 0 }, CT: { humans: [], bots: 0 } };
+    const tokens = new Map();
+    for (const p of room.game.players.values()) {
+      if (p.bot) {
+        sides[p.team].bots += 1;
+        continue;
+      }
+      const socket = this.io.sockets.sockets.get(p.id);
+      if (!socket) continue;
+      const token = socket.data.token;
+      sides[p.team].humans.push({ token, name: p.name });
+      tokens.set(token, socket);
+    }
+    const results = this.elo.applyMatch(sides, winner);
+    for (const [token, result] of results) {
+      tokens.get(token)?.emit('elo', { ...result, rank: this.elo.rank(token) });
+    }
+  }
+
   humans(room) {
     return room.game.humanCount();
   }
 
-  quickMatch() {
+  quickMatch(mode) {
+    const wanted = MODES[mode] ? mode : 'tdm';
     const candidates = [...this.rooms.values()]
-      .filter((r) => r.isPublic && this.humans(r) < MAX_HUMANS && r.game.phase !== 'matchover')
+      .filter((r) => r.isPublic && r.game.mode === wanted && this.humans(r) < MAX_HUMANS && r.game.phase !== 'matchover')
       .sort((a, b) => this.humans(b) - this.humans(a));
-    return candidates[0] || this.create({ isPublic: true, teamSize: PUBLIC_TEAM_SIZE, bots: true });
+    return candidates[0] || this.create({ isPublic: true, teamSize: PUBLIC_TEAM_SIZE, bots: true, mode: wanted });
   }
 
-  join(room, socket, name, skin) {
+  join(room, socket, name, skin, token) {
     if (this.humans(room) >= MAX_HUMANS) return { ok: false, error: 'Salle pleine' };
     this.leave(socket);
     room.sockets.add(socket.id);
     socket.join(room.code);
     socket.data.room = room.code;
+    socket.data.token = /^[\w-]{8,64}$/.test(token) ? token : socket.id;
+    this.elo.get(socket.data.token, name);
     const player = room.game.addPlayer({ id: socket.id, name, skin });
     return {
       ok: true,
@@ -107,6 +142,7 @@ export class RoomManager {
         humans: this.humans(r),
         max: MAX_HUMANS,
         teamSize: r.game.opts.teamSize,
+        mode: r.game.mode,
         round: r.game.round,
         score: [r.game.score.T, r.game.score.CT],
         phase: r.game.phase

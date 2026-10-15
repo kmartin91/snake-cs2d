@@ -5,6 +5,7 @@ import { SKINS, SKIN_IDS } from './skins.js';
 import { clamp, rand, pick } from './utils.js';
 import { circleHitsWall, pointAlong, trimTrail, lineClear } from './physics.js';
 import * as bots from './bots.js';
+import { MODES, LADDER, CLASSIC, freshBomb, gunGameKill, siteAt, startRound, endRound, actingOf, interruptAction, dropBomb, classicTick } from './modes.js';
 
 const r1 = (v) => Math.round(v * 10) / 10;
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -37,6 +38,11 @@ function createPlayer(id, name, bot, team) {
     followers: [],
     trail: [],
     weapon: 'pistol',
+    tier: 0,
+    tierKills: 0,
+    hasBomb: false,
+    actionHeld: false,
+    acting: null,
     ammo: WEAPONS.pistol.mag,
     reload: 0,
     cd: 0,
@@ -68,8 +74,18 @@ export class Game {
       teamSize: clamp(Number(opts.teamSize) || 3, 1, 5),
       bots: opts.bots !== false,
       difficulty: DIFFICULTY[opts.difficulty] ? opts.difficulty : 'normal',
-      scoreToWin: clamp(Number(opts.scoreToWin) || CONFIG.scoreToWin, 5, 100)
+      scoreToWin: clamp(Number(opts.scoreToWin) || CONFIG.scoreToWin, 5, 100),
+      roundsToWin: clamp(Number(opts.roundsToWin) || 5, 2, 10),
+      mode: MODES[opts.mode] ? opts.mode : 'tdm'
     };
+    this.mode = this.opts.mode;
+    this.round = 0;
+    this.bomb = freshBomb();
+    this.swapPending = false;
+    this.halftimeDone = false;
+    this.matchWinner = null;
+    this.finisher = null;
+    this.plan = 'A';
     this.tickMs = TICK_MS;
     this.map = parseMap(MAP_ROWS);
     const n = this.map.width * this.map.height;
@@ -222,6 +238,12 @@ export class Game {
   startMatch() {
     this.score = { T: 0, CT: 0 };
     this.winner = null;
+    this.round = 0;
+    this.swapPending = false;
+    this.halftimeDone = false;
+    this.matchWinner = null;
+    this.finisher = null;
+    this.bomb = freshBomb();
     this.loot = [];
     this.bullets = [];
     this.grenades = [];
@@ -233,37 +255,55 @@ export class Game {
       p.deaths = 0;
       p.downs = 0;
       p.streak = 0;
+      p.tier = 0;
+      p.tierKills = 0;
+      p.hasBomb = false;
       p.alive = false;
     }
     this.fillBots();
-    for (let i = 0; i < Math.ceil(CONFIG.lootMax / 2); i += 1) this.spawnLoot();
-    for (const p of this.players.values()) this.spawn(p);
     if (!this.teamsReady()) {
+      for (let i = 0; i < Math.ceil(CONFIG.lootMax / 2); i += 1) this.spawnLoot();
+      for (const p of this.players.values()) this.spawn(p);
       this.phase = 'warmup';
       this.time = 0;
       this.emit('warmup');
       return;
     }
-    this.phase = 'countdown';
-    this.time = CONFIG.countdown;
-    this.emit('matchstart', { goal: this.opts.scoreToWin });
+    this.emit('matchstart', { mode: this.mode, goal: this.mode === 'classic' ? this.opts.roundsToWin : this.opts.scoreToWin });
+    if (this.mode === 'classic') {
+      this.startRound();
+    } else {
+      for (let i = 0; i < Math.ceil(CONFIG.lootMax / 2); i += 1) this.spawnLoot();
+      for (const p of this.players.values()) this.spawn(p);
+      this.phase = 'countdown';
+      this.time = CONFIG.countdown;
+    }
     const talker = pick([...this.players.values()].filter((p) => p.bot));
     if (talker) this.botChat(talker, 'start', 0.5);
   }
 
-  endMatch() {
+  endMatch(winner = null, finisher = null) {
     this.phase = 'matchover';
     this.time = CONFIG.matchOver;
-    this.winner = this.score.T === this.score.CT ? 'draw' : this.score.T > this.score.CT ? 'T' : 'CT';
+    this.finisher = finisher;
+    this.winner = winner || (this.score.T === this.score.CT ? 'draw' : this.score.T > this.score.CT ? 'T' : 'CT');
     for (const p of this.players.values()) {
       p.fireHeld = false;
       p.mvx = 0;
       p.mvy = 0;
     }
-    this.emit('matchend', { winner: this.winner });
+    this.emit('matchend', { winner: this.winner, mode: this.mode, finisher });
   }
 
-  spawn(p) {
+  giveWeapon(p, w) {
+    p.weapon = w;
+    p.ammo = WEAPONS[w].mag;
+    p.reload = 0;
+    p.cd = 0.2;
+  }
+
+  spawn(p, keep = false) {
+    const kept = keep ? { weapon: p.weapon, squad: p.followers.length, he: p.he, flash: p.flash, smoke: p.smoke } : null;
     const cells = this.spawnCells[p.team];
     const others = [...this.players.values()].filter((o) => o.alive && o !== p);
     let cell = pick(cells);
@@ -283,17 +323,19 @@ export class Game {
     p.trail = [];
     for (let i = 1; i <= 12; i += 1) p.trail.push({ x: p.x + bx * i * 0.25, y: p.y + by * i * 0.25 });
     p.followers = [];
-    for (let i = 0; i < CONFIG.startFollowers; i += 1) this.addFollower(p);
+    const squad = kept ? Math.max(CONFIG.startFollowers, kept.squad) : CONFIG.startFollowers;
+    for (let i = 0; i < squad; i += 1) this.addFollower(p);
     this.placeFollowers(p);
     p.alive = true;
     p.hp = CONFIG.leaderHp;
-    p.weapon = 'pistol';
-    p.ammo = WEAPONS.pistol.mag;
-    p.reload = 0;
+    this.giveWeapon(p, this.mode === 'gungame' ? LADDER[Math.min(p.tier, LADDER.length - 1)].w : kept ? kept.weapon : 'pistol');
     p.cd = 0;
-    p.he = 0;
-    p.flash = 0;
-    p.smoke = 0;
+    p.he = kept ? kept.he : 0;
+    p.flash = kept ? kept.flash : 0;
+    p.smoke = kept ? kept.smoke : 0;
+    p.hasBomb = false;
+    p.actionHeld = false;
+    p.acting = null;
     p.flashed = 0;
     p.shield = CONFIG.spawnShield;
     p.respawn = 0;
@@ -351,6 +393,9 @@ export class Game {
       case 'f':
         p.fireHeld = Boolean(a);
         return;
+      case 'a':
+        p.actionHeld = Boolean(a);
+        return;
       case 'r':
         if (p.alive && p.reload <= 0 && p.ammo < WEAPONS[p.weapon].mag) this.startReload(p);
         return;
@@ -387,7 +432,7 @@ export class Game {
         this.time -= DT;
         if (this.time <= 0) {
           this.phase = 'live';
-          this.time = CONFIG.matchTime;
+          this.time = this.mode === 'classic' ? CLASSIC.roundTime : CONFIG.matchTime;
           this.emit('live');
         }
         break;
@@ -399,7 +444,21 @@ export class Game {
         }
         this.simulate();
         this.time -= DT;
-        if (this.phase === 'live' && this.time <= 0) this.endMatch();
+        if (this.phase === 'live' && this.time <= 0) {
+          if (this.mode === 'classic') this.endRound('CT', 'time');
+          else this.endMatch();
+        }
+        break;
+      case 'planted':
+        this.simulate();
+        break;
+      case 'roundover':
+        this.simulate();
+        this.time -= DT;
+        if (this.time <= 0) {
+          if (this.matchWinner) this.endMatch(this.matchWinner);
+          else this.startRound();
+        }
         break;
       case 'matchover':
         this.time -= DT;
@@ -427,14 +486,16 @@ export class Game {
 
   simulate() {
     this.tickTimers();
+    const respawns = this.mode !== 'classic' || this.phase === 'warmup';
     for (const p of this.players.values()) {
-      if (p.alive) continue;
+      if (p.alive || !respawns) continue;
       p.respawn -= DT;
       if (p.respawn <= 0) this.spawn(p);
     }
     const alive = [...this.players.values()].filter((p) => p.alive);
     for (const p of alive) if (p.bot) this.botThink(p, alive);
-    for (const p of alive) this.move(p, alive);
+    for (const p of alive) p.acting = this.mode === 'classic' ? this.actingOf(p) : null;
+    for (const p of alive) if (!p.acting) this.move(p, alive);
     for (const p of alive) this.placeFollowers(p);
     this.buildSoldierGrid(alive);
     for (const p of alive) this.shoot(p);
@@ -442,22 +503,18 @@ export class Game {
     this.updateGrenades(alive);
     this.updateSmokes();
     this.updateLoot(alive);
-    if (this.phase === 'live') {
+    if (this.mode === 'classic') {
+      if (this.phase !== 'warmup') this.classicTick(alive);
+    } else if (this.mode === 'tdm' && this.phase === 'live') {
       const goal = this.opts.scoreToWin;
       if (this.score.T >= goal || this.score.CT >= goal) this.endMatch();
     }
   }
 
-  blockedAt(p, x, y, alive, ignoreSelf) {
+  blockedAt(p, x, y, alive) {
     if (circleHitsWall(this.map, x, y, CONFIG.leaderRadius)) return true;
     const reach = CONFIG.leaderRadius + CONFIG.soldierRadius - 0.04;
     const r2max = reach * reach;
-    if (!ignoreSelf) {
-      for (let i = 2; i < p.followers.length; i += 1) {
-        const f = p.followers[i];
-        if ((f.x - x) ** 2 + (f.y - y) ** 2 < r2max) return true;
-      }
-    }
     for (const o of alive) {
       if (o === p || o.team === p.team || !o.alive) continue;
       if ((o.x - x) ** 2 + (o.y - y) ** 2 < r2max) return true;
@@ -497,14 +554,13 @@ export class Game {
     const my = Math.sin(p.angle);
     const speed = CONFIG.speed * (p.weapon === 'sniper' ? 0.85 : 1) * (p.flashed > 0 ? 0.7 : 1);
     const stepLen = speed * DT;
-    const ignoreSelf = p.stuck > 0.5;
     const tries = [
       [p.x + mx * stepLen, p.y + my * stepLen],
       [p.x + Math.sign(mx) * stepLen * Math.min(1, Math.abs(mx) + 0.3), p.y],
       [p.x, p.y + Math.sign(my) * stepLen * Math.min(1, Math.abs(my) + 0.3)]
     ];
     for (const [nx, ny] of tries) {
-      if ((nx === p.x && ny === p.y) || this.blockedAt(p, nx, ny, alive, ignoreSelf)) continue;
+      if ((nx === p.x && ny === p.y) || this.blockedAt(p, nx, ny, alive)) continue;
       p.x = nx;
       p.y = ny;
       p.moving = true;
@@ -577,10 +633,10 @@ export class Game {
   shoot(p) {
     const w = WEAPONS[p.weapon];
     if (p.wantThrow) {
-      this.throwGrenade(p, p.wantThrow);
+      if (!p.acting || p.wantThrow === 'flash') this.throwGrenade(p, p.wantThrow);
       p.wantThrow = null;
     }
-    const firing = (p.fireHeld || p.wantFire) && p.reload <= 0 && p.ammo > 0;
+    const firing = !p.acting && (p.fireHeld || p.wantFire) && p.reload <= 0 && p.ammo > 0;
     p.wantFire = false;
     if (!firing) return;
     const reach = Math.max(3, p.aimDist);
@@ -677,6 +733,7 @@ export class Game {
   damage(owner, follower, dmg, attacker, how, x, y) {
     if (!owner.alive || owner.shield > 0) return;
     const by = attacker ? attacker.id : null;
+    if (owner.acting) this.interruptAction(owner);
     if (!follower) {
       owner.hp -= dmg;
       this.emit('hit', { id: owner.id, by, x: r2(x), y: r2(y), dmg: Math.round(dmg), lead: 1 });
@@ -707,7 +764,8 @@ export class Game {
       killer.streak = this.tickCount - killer.lastKill <= 100 ? killer.streak + 1 : 1;
       killer.lastKill = this.tickCount;
       streak = killer.streak;
-      if (this.phase === 'live') this.score[killer.team] += 1;
+      if (this.phase === 'live' && this.mode !== 'classic') this.score[killer.team] += 1;
+      if (this.mode === 'gungame' && this.phase === 'live') this.gunGameKill(killer);
       if (killer.bot) this.botChat(killer, 'kill', 0.12);
     }
     if (p.bot) this.botChat(p, 'death', 0.1);
@@ -725,7 +783,8 @@ export class Game {
 
   dropLoot(p) {
     for (const f of p.followers) if (Math.random() < CONFIG.tagChance) this.addLoot('tag', f.x, f.y);
-    if (p.weapon !== 'pistol') this.addLoot(p.weapon === 'golden' ? 'golden' : 'weapon', p.x, p.y, p.weapon);
+    if (p.hasBomb) this.dropBomb(p);
+    if (p.weapon !== 'pistol' && this.mode !== 'gungame') this.addLoot(p.weapon === 'golden' ? 'golden' : 'weapon', p.x, p.y, p.weapon);
   }
 
   throwGrenade(p, type) {
@@ -838,6 +897,7 @@ export class Game {
           break;
         }
       }
+      if (kind === 'weapon' && this.mode === 'gungame') kind = 'recruit';
       this.addLoot(kind, c.x, c.y, kind === 'weapon' ? pick(LOOT_WEAPONS) : null);
       return;
     }
@@ -849,7 +909,7 @@ export class Game {
       this.lootTimer = CONFIG.lootEvery;
       this.spawnLoot();
     }
-    if (this.phase === 'live') {
+    if (this.phase === 'live' && this.mode === 'tdm') {
       const goldenOut =
         this.loot.some((l) => l.kind === 'golden') || [...this.players.values()].some((p) => p.alive && p.weapon === 'golden');
       if (goldenOut) this.goldenTimer = CONFIG.goldenEvery;
@@ -953,9 +1013,12 @@ export class Game {
     const mask = this.vision[team];
     const w = this.map.width;
     const seen = (x, y) => mask[Math.round(y) * w + Math.round(x)] === 1;
+    let bomb = snap.bomb;
+    if (bomb && team === 'CT' && (bomb.s === 'ground' || bomb.s === 'carried') && !seen(bomb.x, bomb.y)) bomb = { ...bomb, s: 'unknown' };
     return {
       ...snap,
       p: players,
+      bomb,
       gr: snap.gr.filter((g) => g[6] === (team === 'T' ? 0 : 1) || seen(g[2], g[3])),
       ns: noises,
       fog: 1
@@ -997,7 +1060,11 @@ export class Game {
         im: p.started ? 0 : 1,
         sq: p.spawnSeq,
         sk: p.skin,
-        pg: p.ping
+        pg: p.ping,
+        tr: p.tier,
+        tkk: p.tierKills,
+        hb: p.hasBomb ? 1 : 0,
+        ac: p.acting
       });
     }
     return {
@@ -1014,9 +1081,25 @@ export class Game {
       gr: this.grenades.map((g) => [g.id, g.type, r2(g.x), r2(g.y), 0, 0, g.team === 'T' ? 0 : 1]),
       sm: this.smokes.map((s) => [r1(s.x), r1(s.y), r1(s.ttl)]),
       mw: this.winner,
+      fin: this.finisher,
+      mode: this.mode,
+      rd: this.round,
+      rtw: this.opts.roundsToWin,
+      bomb: this.mode === 'classic'
+        ? {
+            s: this.bomb.state,
+            x: r1(this.bomb.x),
+            y: r1(this.bomb.y),
+            c: this.bomb.carrier,
+            t: r1(Math.max(0, this.bomb.timer)),
+            pp: r2(this.bomb.plant / CLASSIC.plantTime),
+            dp: r2(this.bomb.defuse / CLASSIC.defuseTime),
+            site: this.bomb.site
+          }
+        : null,
       ev: this.events
     };
   }
 }
 
-Object.assign(Game.prototype, bots);
+Object.assign(Game.prototype, bots, { gunGameKill, siteAt, startRound, endRound, actingOf, interruptAction, dropBomb, classicTick });
