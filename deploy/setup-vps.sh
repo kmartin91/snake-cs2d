@@ -15,6 +15,6 @@ ssh "$HOST" "sudo mv /tmp/csnake.conf /tmp/csnake-ssl.conf /etc/apache2/sites-av
 
 ./deploy.sh
 
-ssh "$HOST" "sudo certbot certonly --webroot -w /var/www/csnake -d $DOMAIN --non-interactive --agree-tos --keep-until-expiring \
+ssh "$HOST" "sudo certbot certonly --webroot -w /var/www/csnake -d $DOMAIN --non-interactive --agree-tos --keep-until-expiring --deploy-hook 'systemctl reload apache2' \
   && sudo a2ensite csnake-ssl.conf >/dev/null && sudo apache2ctl configtest && sudo systemctl reload apache2"
 echo "https://$DOMAIN est prêt."
