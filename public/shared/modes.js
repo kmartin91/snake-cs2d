@@ -58,6 +58,7 @@ export function startRound() {
       p.team = p.team === 'T' ? 'CT' : 'T';
       p.alive = false;
     }
+    this.score = { T: this.score.CT, CT: this.score.T };
     this.emit('halftime');
   }
   this.round += 1;
