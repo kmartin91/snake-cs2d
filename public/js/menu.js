@@ -41,6 +41,15 @@ export class Menu {
       tab.addEventListener('click', () => this.showTab(tab.dataset.tab));
     }
 
+    for (const link of document.querySelectorAll('.main-nav [data-go]')) {
+      link.addEventListener('click', () => {
+        if (link.dataset.go !== 'help') return this.showTab(link.dataset.go);
+        const help = document.querySelector('.help');
+        help.open = true;
+        help.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+
     for (const seg of document.querySelectorAll('.seg')) {
       const key = seg.dataset.opt;
       for (const btn of seg.querySelectorAll('button')) {
@@ -113,6 +122,7 @@ export class Menu {
 
   showTab(name) {
     for (const tab of document.querySelectorAll('.tab')) tab.classList.toggle('active', tab.dataset.tab === name);
+    for (const link of document.querySelectorAll('.main-nav [data-go]')) link.classList.toggle('on', link.dataset.go === name);
     $('tab-solo').classList.toggle('hidden', name !== 'solo');
     $('tab-online').classList.toggle('hidden', name !== 'online');
     $('tab-profile').classList.toggle('hidden', name !== 'profile');

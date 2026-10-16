@@ -32,6 +32,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/vgui.css" />
   </head>
   <body>
     <main id="stage">
@@ -75,9 +76,9 @@
 
         <section id="scoreboard" class="panel hidden"></section>
 
-        <section id="matchOver" class="panel hidden"></section>
+        <section id="matchOver" class="panel vgui-panel hidden"></section>
 
-        <section id="pauseMenu" class="panel hidden">
+        <section id="pauseMenu" class="panel vgui-panel hidden">
           <h2>Pause</h2>
           <button id="resumeBtn" class="btn primary">Reprendre</button>
           <button id="muteBtn" class="btn">Son : oui</button>
@@ -106,8 +107,16 @@
       </div>
 
       <section id="menu">
-        <div class="menu-card">
+        <nav class="main-nav" aria-label="Menu principal">
+          <button type="button" data-go="solo" class="on">Nouvelle partie</button>
+          <button type="button" data-go="online">Trouver des serveurs</button>
+          <button type="button" data-go="profile">Profil et skins</button>
+          <button type="button" data-go="help">Comment jouer</button>
           <h1 class="logo"><span>CS</span>NAKE</h1>
+        </nav>
+        <div class="menu-card vgui">
+          <div class="vgui-title">🐍 CSnake<small>un nouveau jeu chaque vendredi midi</small></div>
+          <div class="vgui-body">
           <p class="tagline">Ton escouade te suit en file. Plus elle est longue, plus tu cognes fort… et plus tu es une cible.</p>
 
           <button id="profileCard" class="profile-card" type="button">
@@ -137,7 +146,7 @@
             <div class="opt"><span>Bots</span><div class="seg" data-opt="difficulty"><button data-v="easy">Facile</button><button data-v="normal" class="on">Normal</button><button data-v="hard">Hardcore</button></div></div>
             <div class="opt"><span>Camp</span><div class="seg" data-opt="team"><button data-v="auto" class="on">Auto</button><button data-v="T">T</button><button data-v="CT">CT</button></div></div>
             <div class="opt tdm-only"><span>Kills pour gagner</span><div class="seg" data-opt="scoreToWin"><button data-v="15">15</button><button data-v="25" class="on">25</button><button data-v="40">40</button></div></div>
-            <button id="soloBtn" class="btn primary big">Jouer</button>
+            <button id="soloBtn" class="btn primary big">Lancer la partie</button>
             <p class="quick-keys desk"><kbd>ZQSD</kbd> / <kbd>↑←↓→</kbd> diriger · 🖱️ viser et tirer · ramasse des ➕ recrues</p>
             <p class="quick-keys touch">Joystick gauche : diriger · joystick droit : viser et tirer</p>
             <p class="muted small" id="xpHint"></p>
@@ -192,6 +201,7 @@
               <li>Tu tires plus précis en ligne droite qu'en plein virage. Les murs et les fumigènes bloquent la vue ; les ennemis proches s'entendent (échos rouges).</li>
             </ul>
           </details>
+          </div>
         </div>
       </section>
     </main>
