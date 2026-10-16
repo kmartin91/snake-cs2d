@@ -13,7 +13,7 @@ const NADE_KEYS = { KeyG: 'he', KeyF: 'flash', KeyC: 'smoke' };
 
 export const KEY_HELP = [
   ['ZQSD / WASD / flèches', 'Diriger le leader (il avance toujours, l\'escouade suit)'],
-  ['Souris', 'Viser — toute l\'escouade tire vers le viseur'],
+  ['Souris', 'Viser : toute l\'escouade tire vers le viseur'],
   ['Clic / Espace', 'Tirer (plus précis en ligne droite)'],
   ['R', 'Recharger'],
   ['E (maintenu)', 'Classique : poser / désamorcer la bombe'],

@@ -145,7 +145,7 @@ export class Menu {
   setLeaderboard(data) {
     const list = $('leaderboard');
     if (!data || !data.top.length) {
-      list.innerHTML = '<li class="muted">Personne n\'est encore classé — joue un match Classique en ligne !</li>';
+      list.innerHTML = '<li class="muted">Personne n\'est encore classé. Joue un match Classique en ligne !</li>';
     } else {
       list.innerHTML = data.top
         .map((p, i) => `<li><span>${i + 1}. ${esc(p.name)}</span><b>${p.rating}</b><small class="muted">${p.wins}V / ${p.games}</small></li>`)
@@ -157,7 +157,7 @@ export class Menu {
 
   updateXpHint() {
     const mult = SOLO_XP[this.opts.difficulty] || 1;
-    $('xpHint').textContent = `XP ×${mult}${mult > 1 ? ' — le Hardcore rapporte plus !' : mult < 1 ? ' — passe en Normal ou Hardcore pour plus d\'XP' : ''}`;
+    $('xpHint').textContent = `XP ×${mult}${mult > 1 ? ' : le Hardcore rapporte plus !' : mult < 1 ? ' : passe en Normal ou Hardcore pour plus d\'XP' : ''}`;
   }
 
   renderProfile() {
@@ -225,7 +225,7 @@ export class Menu {
   setServer(status) {
     const el = $('serverStatus');
     if (!status) {
-      el.textContent = 'Serveur injoignable — le mode solo marche quand même.';
+      el.textContent = 'Serveur injoignable, le mode solo marche quand même.';
       $('quickBtn').disabled = true;
       return;
     }
@@ -233,7 +233,7 @@ export class Menu {
     el.textContent = `🟢 ${status.players} joueur${status.players > 1 ? 's' : ''} en ligne · ${status.rooms} salle${status.rooms > 1 ? 's' : ''}`;
     const list = $('roomList');
     if (!status.rooms || !status.list.length) {
-      list.innerHTML = '<li class="muted">Aucune salle publique — lance une partie rapide !</li>';
+      list.innerHTML = '<li class="muted">Aucune salle publique. Lance une partie rapide !</li>';
       return;
     }
     list.innerHTML = status.list

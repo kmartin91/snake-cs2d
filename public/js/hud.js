@@ -116,8 +116,8 @@ export class Hud {
     el.scoreT.textContent = snap.sc[0];
     el.scoreCT.textContent = snap.sc[1];
     document.getElementById('stage').classList.toggle('mode-classic', snap.mode === 'classic');
-    let label = '—';
-    let timer = '—';
+    let label = '-';
+    let timer = '-';
     const b = snap.bomb;
     if (snap.ph === 'warmup') {
       label = 'En attente d\'adversaires…';
@@ -127,7 +127,7 @@ export class Hud {
       timer = 'GG';
     } else if (snap.mode === 'classic') {
       label = snap.ph === 'planted' ? `Bombe posée sur ${b.site}` : `Round ${snap.rd} · premier à ${snap.rtw}`;
-      timer = snap.ph === 'planted' ? `💣 ${fmt(b.t)}` : snap.ph === 'roundover' ? '—' : fmt(snap.tm);
+      timer = snap.ph === 'planted' ? `💣 ${fmt(b.t)}` : snap.ph === 'roundover' ? '-' : fmt(snap.tm);
     } else {
       label = snap.mode === 'gungame' ? 'Course à l\'armement' : `Premier à ${snap.goal} kills`;
       timer = fmt(snap.tm);
@@ -189,11 +189,11 @@ export class Hud {
       if (self.ac === 'plant') return ['Pose en cours… ne lâche pas E', true];
       return ['Tu as la bombe : va sur A ou B et maintiens E', true];
     }
-    if (self.tm === 'T' && b.s === 'ground') return ['La bombe est au sol — récupère-la !', true];
+    if (self.tm === 'T' && b.s === 'ground') return ['La bombe est au sol, récupère-la !', true];
     if (self.tm === 'CT' && b.s === 'planted') {
       const near = Math.hypot(self.s[0] - b.x, self.s[1] - b.y) <= CLASSIC.defuseRange;
       if (self.ac === 'defuse') return ['Désamorçage… ne lâche pas E', true];
-      return [near ? 'Maintiens E pour désamorcer' : `Bombe sur ${b.site} — fonce désamorcer !`, true];
+      return [near ? 'Maintiens E pour désamorcer' : `Bombe sur ${b.site} : fonce désamorcer !`, true];
     }
     return null;
   }
@@ -208,17 +208,17 @@ export class Hud {
       const squad = self.s.length / 2;
       if (snap.ph === 'countdown') text = 'Ramasse des recrues ➕ pour allonger ton escouade';
       else if (self.im) {
-        text = 'Choisis une direction pour démarrer — ensuite ton serpent avance toujours';
+        text = 'Choisis une direction pour démarrer, ensuite ton serpent avance toujours';
         alert = true;
       }
       else if (snap.lt.some((l) => l[1] === 'golden') && self.w !== 'golden') {
         text = '👑 Deagle d\'or au centre de la carte !';
         alert = true;
       } else if (self.hp <= 35) {
-        text = 'Leader blessé — trouve un soin ➕ ou recule derrière ton escouade';
+        text = 'Leader blessé : trouve un soin ➕ ou recule derrière ton escouade';
         alert = true;
       } else if (self.rl > 0) text = 'Rechargement…';
-      else if (squad <= 2) text = 'Escouade réduite — va chercher des recrues';
+      else if (squad <= 2) text = 'Escouade réduite : va chercher des recrues';
     }
     if (el.textContent !== text) el.textContent = text;
     el.classList.toggle('alert', alert);
@@ -308,12 +308,12 @@ export class Hud {
           .sort((a, b) => b.k - a.k || a.dt - b.dt)
           .map(
             (p) => `<tr class="${p.id === this.selfId ? 'me' : ''} ${p.a ? '' : 'dead'}">
-              <td>${esc(p.n)}</td><td>${p.k}</td><td>${p.dt}</td><td>${p.dn}</td><td>${p.a ? p.s.length / 2 : '—'}</td>
+              <td>${esc(p.n)}</td><td>${p.k}</td><td>${p.dt}</td><td>${p.dn}</td><td>${p.a ? p.s.length / 2 : '-'}</td>
               <td>${esc((WEAPONS[p.w] || WEAPONS.pistol).name)}</td>${this.online ? `<td>${p.b ? 'BOT' : p.pg}</td>` : ''}</tr>`
           )
           .join('');
         const score = team === 'T' ? snap.sc[0] : snap.sc[1];
-        return `<div class="sb-team ${team}"><h3>${team === 'T' ? 'Terroristes' : 'Anti-terroristes'} — ${score}</h3>
+        return `<div class="sb-team ${team}"><h3>${team === 'T' ? 'Terroristes' : 'Anti-terroristes'} (${score})</h3>
           <table><tr><th>Joueur</th><th>K</th><th>D</th><th>Soldats</th><th>🐍</th><th>Arme</th>${this.online ? '<th>Ping</th>' : ''}</tr>${rows}</table></div>`;
       })
       .join('');
@@ -345,7 +345,7 @@ export class Hud {
       ? `<p class="elo-line">ELO ${esc(this.elo.label)} : <b>${this.elo.after}</b> <span class="${this.elo.delta >= 0 ? 'up' : 'down'}">${this.elo.delta >= 0 ? '+' : ''}${this.elo.delta}</span>${this.elo.rank ? ` · rang ${this.elo.rank}` : ''}</p>`
       : '';
     el.innerHTML = `<h2>${title}</h2>
-      <div class="final-score"><span class="T">${snap.sc[0]}</span> — <span class="CT">${snap.sc[1]}</span></div>
+      <div class="final-score"><span class="T">${snap.sc[0]}</span> - <span class="CT">${snap.sc[1]}</span></div>
       ${finisher ? `<p class="elo-line">👑 ${this.nameTag(finisher)} a fini la course à l'armement</p>` : ''}
       ${elo}
       ${summary}

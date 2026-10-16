@@ -43,8 +43,8 @@ async function shareGame(text = 'Viens jouer à CSnake, le mélange de Snake et 
   }
   try {
     await navigator.clipboard.writeText(`${text} ${url}`);
-    if (session) hud.system('Lien copié — colle-le à tes potes !');
-    else menu.error('Lien copié — colle-le à tes potes !');
+    if (session) hud.system('Lien copié, colle-le à tes potes !');
+    else menu.error('Lien copié, colle-le à tes potes !');
   } catch {
     if (session) hud.system(url);
   }
@@ -207,7 +207,7 @@ function startSolo(opts) {
   progress.resetMatch();
   const s = new LocalSession({ ...opts, skin: progress.s.skin }, onSnapshot);
   enterGame(s, { solo: true, label: `${MODES[opts.mode]?.label || ''} · ${opts.teamSize}v${opts.teamSize} · ${DIFF_LABEL[opts.difficulty]}` });
-  hud.system('Mode solo — Échap pour mettre en pause.');
+  hud.system('Mode solo : Échap pour mettre en pause.');
 }
 
 async function ensureSocket() {
@@ -253,7 +253,7 @@ async function goOnline(kind, payload) {
     online.onElo = (result) => hud.setElo(result, 'en ligne');
     enterGame(online, { code: res.code });
     history.replaceState(null, '', `${location.pathname}?room=${res.code}`);
-    hud.system(`Salle ${res.code}${res.isPublic ? ' (publique)' : ' (privée)'} — partage le lien pour inviter tes potes !`);
+    hud.system(`Salle ${res.code}${res.isPublic ? ' (publique)' : ' (privée)'} : partage le lien pour inviter tes potes !`);
   } catch (err) {
     menu.error(err.message || 'Serveur injoignable');
     menu.setBusy(false);
@@ -402,7 +402,7 @@ function handleEvent(ev, snap) {
       break;
     }
     case 'round':
-      hud.announce(`ROUND ${ev.round}`, self ? `Tu es ${self.tm === 'T' ? 'TERRORISTE — pose la bombe sur A ou B' : 'ANTI-TERRORISTE — défends A et B'}` : '', self ? TEAM_COLORS[self.tm].main : '#fff', 2400);
+      hud.announce(`ROUND ${ev.round}`, self ? `Tu es ${self.tm === 'T' ? 'TERRORISTE : pose la bombe sur A ou B' : 'ANTI-TERRORISTE : défends A et B'}` : '', self ? TEAM_COLORS[self.tm].main : '#fff', 2400);
       break;
     case 'roundend': {
       const reasons = { elim: 'Équipe adverse éliminée', time: 'Temps écoulé', bomb: 'La bombe a explosé', defuse: 'Bombe désamorcée' };
@@ -461,7 +461,7 @@ function handleEvent(ev, snap) {
         hud.announce(WEAPONS[ev.w].name.toUpperCase(), `Arme ${ev.tier + 1}/${LADDER.length}${next && next.w === 'golden' ? ' · un kill pour gagner !' : ''}`, WEAPONS[ev.w].color, 1800);
         audio.play('weapon');
       } else if (ev.tier === LADDER.length - 1) {
-        hud.system(`👑 ${playerName(snap, ev.id)} a le Deagle d'or — un kill et il gagne !`);
+        hud.system(`👑 ${playerName(snap, ev.id)} a le Deagle d'or : un kill et il gagne !`);
       }
       break;
     case 'live':
@@ -498,7 +498,7 @@ function onPickup(ev, snap, mine) {
   fx.burst(ev.x, ev.y, { n: 10, color: colors[ev.k] || '#fff', speed: 4, life: 0.4, size: 0.12 });
   if (ev.k === 'golden') {
     hud.system(`👑 ${playerName(snap, ev.id)} a le Deagle d'or !`);
-    if (mine) hud.announce('DEAGLE D\'OR', 'Gros dégâts — tout le monde va te traquer', '#ffd25e', 2200);
+    if (mine) hud.announce('DEAGLE D\'OR', 'Gros dégâts, tout le monde va te traquer', '#ffd25e', 2200);
   }
   if (!mine) return;
   if (ev.k === 'recruit' || ev.k === 'tag') {
